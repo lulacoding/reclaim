@@ -10,8 +10,10 @@
 //! Gradle and Docker are deliberately absent from [`commands_for`]:
 //! Gradle's global cache has no real cleanup command (RULES.md STORE-007
 //! reclaims it by directory move, handled by [`crate::quarantine`]
-//! instead), and Docker gets its own guarded flow (BUILD_PLAN M4 item 4 --
-//! `system df`/`system prune`, `--volumes` hard-blocked).
+//! instead), and Docker gets its own guarded flow in
+//! [`crate::docker_reclaim`] (BUILD_PLAN M4 item 4 -- `system
+//! df`/`system prune`, `--volumes` hard-blocked by
+//! [`refuse_if_volumes_flag`]).
 
 use std::path::Path;
 use std::process::Command;
@@ -148,11 +150,40 @@ pub fn run_reclaim_command(
 ) -> Result<ReclaimCommandResult> {
     let specs =
         commands_for(store_name).ok_or_else(|| Error::UnknownStore(store_name.to_string()))?;
+    run_command_sequence(store, runner, store_name, specs, store_dir, now)
+}
 
+/// Refuses any command whose args carry Docker's `--volumes` flag,
+/// before it is ever handed to a [`CommandRunner`] -- defense in depth
+/// over the M2 catalog invariant (`reclaim-detect::docker` already
+/// asserts no catalog row ever produces this flag). Checked
+/// unconditionally on every step this crate runs, not just Docker's own
+/// sequence, so it catches the flag regardless of how a spec was built.
+pub fn refuse_if_volumes_flag(spec: &CommandSpec) -> Result<()> {
+    if spec.args.iter().any(|arg| arg.contains("--volumes")) {
+        return Err(Error::VolumesFlagRefused(spec.command_line()));
+    }
+    Ok(())
+}
+
+/// Shared step-execution loop behind both [`run_reclaim_command`] and
+/// Docker's guarded flow: runs `specs` in order via `runner`, refusing
+/// (never executing) any step the `--volumes` guard rejects, stopping at
+/// the first failing or refused step, and journaling one `audit_log` row
+/// per step actually run.
+pub(crate) fn run_command_sequence(
+    store: &Store,
+    runner: &dyn CommandRunner,
+    store_name: &str,
+    specs: &[CommandSpec],
+    store_dir: &Path,
+    now: SystemTime,
+) -> Result<ReclaimCommandResult> {
     let mut steps = Vec::with_capacity(specs.len());
     let mut succeeded = true;
 
     for spec in specs {
+        refuse_if_volumes_flag(spec)?;
         let output = runner.run(spec)?;
         let step_ok = output.succeeded();
 

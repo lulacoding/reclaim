@@ -4,6 +4,7 @@
 //! first.
 
 mod command_runner;
+mod docker_reclaim;
 mod error;
 mod quarantine;
 mod recovery;
@@ -12,9 +13,10 @@ mod tool_detection;
 mod volume;
 
 pub use command_runner::{
-    commands_for, run_reclaim_command, CommandRunner, CommandSpec, ReclaimCommandResult,
-    StepOutput, SystemCommandRunner,
+    commands_for, refuse_if_volumes_flag, run_reclaim_command, CommandRunner, CommandSpec,
+    ReclaimCommandResult, StepOutput, SystemCommandRunner,
 };
+pub use docker_reclaim::{docker_reclaim_sequence, run_docker_reclaim};
 pub use error::{Error, Result};
 pub use quarantine::{quarantine, QuarantineRequest};
 pub use recovery::{recover, RecoveredItem, RecoveredLocation};
