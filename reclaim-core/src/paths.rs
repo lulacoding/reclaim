@@ -33,6 +33,19 @@ impl ProtectedPaths {
     /// Builds the standard Windows denylist from well-known environment
     /// variables. Any variable that isn't set is silently skipped, so this
     /// degrades gracefully rather than panicking on an unusual environment.
+    ///
+    /// Documents/Desktop/Pictures/Videos/Music/Downloads get a *second*,
+    /// additive root: whatever [`known_folder_path`] currently resolves for
+    /// them (THREAT_MODEL T2). OneDrive Known Folder Move — the default on
+    /// most consumer Windows logins — silently relocates those folders
+    /// under `%USERPROFILE%\OneDrive\...`; the hardcoded `%USERPROFILE%`
+    /// join above stops pointing at the real folder once that's active, so
+    /// it alone would leave the user's actual Documents/Desktop
+    /// unprotected. This is additive, not a replacement — if
+    /// `known_folder_path` fails for any reason, the `%USERPROFILE%` root
+    /// added above is still protected (fail safe = protect more, never
+    /// less). Resolved fresh on every call, not cached: Known Folder Move
+    /// state is per-machine and can change at any time.
     pub fn windows_defaults() -> Self {
         let mut protected = Self::default();
 
@@ -46,6 +59,7 @@ impl ProtectedPaths {
             ("USERPROFILE", Some("Pictures")),
             ("USERPROFILE", Some("Videos")),
             ("USERPROFILE", Some("Music")),
+            ("USERPROFILE", Some("Downloads")),
             ("APPDATA", None),
             ("LOCALAPPDATA", None),
         ];
@@ -60,6 +74,19 @@ impl ProtectedPaths {
             match subdir {
                 Some(subdir) => protected.add_root(&format!("{value}\\{subdir}")),
                 None => protected.add_root(&value),
+            }
+        }
+
+        for subdir in [
+            "Documents",
+            "Desktop",
+            "Pictures",
+            "Videos",
+            "Music",
+            "Downloads",
+        ] {
+            if let Some(resolved) = known_folder_path(subdir) {
+                protected.add_root(&resolved);
             }
         }
 
@@ -88,6 +115,56 @@ impl ProtectedPaths {
             !root.is_empty() && candidate.len() >= root.len() && candidate[..root.len()] == root[..]
         })
     }
+}
+
+/// Resolves a well-known Windows folder's *current* path — e.g. `"Documents"`,
+/// `"Desktop"`, `"Downloads"` — via the shell API that actually knows where
+/// Windows put it, which correctly follows OneDrive Known Folder Move
+/// redirection (`%USERPROFILE%\OneDrive\...`) unlike a hardcoded
+/// `%USERPROFILE%` join. Returns `None` for an unrecognized name, on any
+/// API failure, or on a non-Windows host — callers must not treat `None` as
+/// "nothing to protect here" on its own; see [`ProtectedPaths::windows_defaults`].
+#[cfg(windows)]
+pub fn known_folder_path(name: &str) -> Option<String> {
+    use windows::core::GUID;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_Music,
+        FOLDERID_Pictures, FOLDERID_Videos, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+    };
+
+    let folder_id: &GUID = match name {
+        "Documents" => &FOLDERID_Documents,
+        "Desktop" => &FOLDERID_Desktop,
+        "Pictures" => &FOLDERID_Pictures,
+        "Videos" => &FOLDERID_Videos,
+        "Music" => &FOLDERID_Music,
+        "Downloads" => &FOLDERID_Downloads,
+        _ => return None,
+    };
+
+    // SAFETY: `folder_id` is one of the constant FOLDERID_* GUIDs above,
+    // valid for the call. `HANDLE(null)` requests resolution for the
+    // current user's token, the standard usage for this API.
+    let pwstr =
+        unsafe { SHGetKnownFolderPath(folder_id, KF_FLAG_DEFAULT, HANDLE(std::ptr::null_mut())) }
+            .ok()?;
+    // SAFETY: `pwstr` is the NUL-terminated UTF-16 string this same call
+    // just returned, not yet freed.
+    let value = unsafe { pwstr.to_string() }.ok();
+    // SAFETY: `pwstr` was allocated by `SHGetKnownFolderPath` and must be
+    // freed by the caller exactly once; nothing else references it, and
+    // `value` above already copied its contents into an owned `String`.
+    unsafe { CoTaskMemFree(Some(pwstr.0.cast())) };
+    value
+}
+
+/// Non-Windows stub: there is no known-folder concept to resolve. Kept so
+/// [`ProtectedPaths::windows_defaults`] doesn't need its own cfg-split.
+#[cfg(not(windows))]
+pub fn known_folder_path(_name: &str) -> Option<String> {
+    None
 }
 
 /// Normalizes a path into lowercase, trimmed components for comparison.

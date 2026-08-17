@@ -1,7 +1,7 @@
 # THREAT_MODEL.md — Reclaim
 
 **Status:** Living risk register. Each threat has a mitigation and a code location; when the code moves, update the location. New destructive capability requires a new entry before it ships.
-**Last updated:** 2026-08-14
+**Last updated:** 2026-08-18
 
 ---
 
@@ -34,6 +34,7 @@ A folder that looks like junk holds the only copy of something (a repurposed `bu
 A detection bug (or a crafted path) classifies a protected location as removable.
 - **Mitigation:** denylist checked twice — in detection *and* again in the action layer immediately before the move. A detection bug alone cannot cause a protected move.
 - **Location:** `reclaim-detect` tiering; `reclaim-action` pre-move veto; `reclaim-core::is_protected`.
+- **Denylist-completeness gap, found and fixed 2026-08-18:** `windows_defaults()` hardcoded `%USERPROFILE%\Documents`/`\Desktop`/etc., which is silently wrong on OneDrive Known Folder Move machines — the default on most consumer Windows logins — where those folders actually live under `%USERPROFILE%\OneDrive\...`. Found live: a real `node_modules` under a KFM-redirected Desktop classified `Safe`, auto-selectable by `dq clean`, inside what was for that user their actual Desktop. Fixed by additionally resolving Documents/Desktop/Pictures/Videos/Music/Downloads via `SHGetKnownFolderPath` (`reclaim_core::paths::known_folder_path`), which follows KFM redirection correctly; the `%USERPROFILE%` root stays protected too (fail safe — protect more, never less — if the API call fails for any reason). Still out of scope, same as before: arbitrary user-created folders elsewhere under a OneDrive sync root (e.g. `OneDrive\Code\...`), tracked by the pre-existing `TODO(cloud)` in `reclaim-core::paths`.
 
 ### T3 — Cloud-placeholder hydration `A1` (indirect: disk-fill) `HIGH`
 Scanning a OneDrive/Dropbox machine opens online-only placeholders, triggering mass downloads and filling the disk.

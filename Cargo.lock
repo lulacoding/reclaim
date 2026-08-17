@@ -436,6 +436,7 @@ dependencies = [
  "serde",
  "thiserror",
  "toml",
+ "windows",
 ]
 
 [[package]]
