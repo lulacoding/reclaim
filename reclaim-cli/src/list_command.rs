@@ -19,6 +19,12 @@ use crate::scan_command::human_bytes;
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct Candidate {
     pub path: PathBuf,
+    /// Un-deduplicated logical size of this path's subtree
+    /// (`DirectoryTotal::logical_size`) — what `dq clean` journals as a
+    /// [`reclaim_action::QuarantineRequest`]'s `size_bytes`. See
+    /// `dedup_size`'s doc for why summing this across a tier is unsafe; the
+    /// same caveat applies here.
+    pub logical_size: u64,
     /// Hardlink-deduped, bottom-up size-on-disk for this path's subtree
     /// (`DirectoryTotal::size_on_disk`).
     ///
@@ -115,7 +121,7 @@ pub fn run(root: &Path, tier_filter: Option<Tier>, json: bool) {
 /// review"). This relies on the walk's `ParentFirst` order: a directory's
 /// own entry is always seen (and classified) before its children's
 /// `DirectoryScanned` event arrives.
-fn collect(root: &Path) -> ListReport {
+pub(crate) fn collect(root: &Path) -> ListReport {
     let protected = ProtectedPaths::windows_defaults();
     let mut report = ListReport {
         root: root.to_path_buf(),
@@ -150,7 +156,8 @@ fn collect(root: &Path) -> ListReport {
 
             report.push(Candidate {
                 path: entry.path.clone(),
-                dedup_size: 0, // filled in below, once totals are known
+                logical_size: 0, // filled in below, once totals are known
+                dedup_size: 0,   // filled in below, once totals are known
                 tier: detection.tier,
                 method: detection.method,
                 rebuild_cost: detection.rebuild_cost,
@@ -170,10 +177,9 @@ fn is_under_claimed(dir: &Path, claimed: &[PathBuf]) -> bool {
 
 fn fill_sizes(report: &mut ListReport, totals: &HashMap<PathBuf, DirectoryTotal>) {
     for candidate in report.candidates_mut() {
-        candidate.dedup_size = totals
-            .get(&candidate.path)
-            .map(|total| total.size_on_disk)
-            .unwrap_or(0);
+        let total = totals.get(&candidate.path).copied().unwrap_or_default();
+        candidate.logical_size = total.logical_size;
+        candidate.dedup_size = total.size_on_disk;
     }
 }
 
@@ -232,6 +238,7 @@ mod tests {
     fn unknown_and_expensive_candidates_serialize_unambiguously() {
         let unknown = Candidate {
             path: PathBuf::from("C:\\Users\\sam\\Documents\\some-random-folder"),
+            logical_size: 123,
             dedup_size: 123,
             tier: Tier::Unknown,
             method: None,
@@ -240,6 +247,7 @@ mod tests {
         };
         let expensive = Candidate {
             path: PathBuf::from("C:\\Users\\sam\\.cache\\huggingface"),
+            logical_size: 456,
             dedup_size: 456,
             tier: Tier::ProbablySafe,
             method: Some(ReclaimMethod::Command(vec![
@@ -268,6 +276,7 @@ mod tests {
         };
         report.push(Candidate {
             path: PathBuf::from("C:\\a"),
+            logical_size: 1,
             dedup_size: 1,
             tier: Tier::Safe,
             method: Some(ReclaimMethod::Move),
@@ -276,6 +285,7 @@ mod tests {
         });
         report.push(Candidate {
             path: PathBuf::from("C:\\b"),
+            logical_size: 2,
             dedup_size: 2,
             tier: Tier::Unknown,
             method: None,
