@@ -12,3 +12,7 @@ dev.db
 
 # Private/pre-launch planning docs — not for the public repo.
 /docs
+
+# AI-assistant tooling/config — internal, not for the public repo.
+/CLAUDE.md
+/.claude/

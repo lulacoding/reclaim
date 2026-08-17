@@ -103,6 +103,23 @@ mod tests {
         );
     }
 
+    /// Hard invariant (RULES.md §6/"Rebuild cost"): a ProbablySafe rule
+    /// with no `rebuild_cost` would let the UI silently pre-select an
+    /// item that might be expensive to regenerate. Guards future rows
+    /// added to this catalog, not just DOCKER-001.
+    #[test]
+    fn every_probably_safe_docker_rule_declares_a_rebuild_cost() {
+        for r in DOCKER_RULES {
+            if r.tier == Tier::ProbablySafe {
+                assert!(
+                    r.rebuild_cost.is_some(),
+                    "{} is Tier::ProbablySafe but has no rebuild_cost",
+                    r.id
+                );
+            }
+        }
+    }
+
     #[test]
     fn docker_002_volumes_is_unknown() {
         assert_eq!(rule("DOCKER-002").tier, Tier::Unknown);
