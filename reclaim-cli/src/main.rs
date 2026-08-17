@@ -2,6 +2,7 @@
 
 mod clean_command;
 mod list_command;
+mod restore_command;
 mod scan_command;
 mod store_util;
 
@@ -73,6 +74,23 @@ enum Command {
         #[arg(long = "grace-period-days")]
         grace_period_days: Option<u32>,
     },
+    /// Restore quarantined items back to their original locations.
+    Restore {
+        /// The operation id to restore. Mutually exclusive with --last/--all.
+        op_id: Option<i64>,
+        /// Restore the most recently completed quarantine operation.
+        #[arg(long)]
+        last: bool,
+        /// Restore everything currently in quarantine, across every operation.
+        #[arg(long)]
+        all: bool,
+        /// Print the result as JSON instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+        /// State database path. Defaults to `%LOCALAPPDATA%\Reclaim\reclaim.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -132,6 +150,19 @@ fn main() {
                 &quarantine_dir,
                 grace,
             );
+        }
+        Command::Restore { op_id, last, all, json, db } => {
+            let db = db.unwrap_or_else(scan_command::default_db_path);
+            let target = match (op_id, last, all) {
+                (Some(id), false, false) => restore_command::RestoreTarget::OpId(id),
+                (None, true, false) => restore_command::RestoreTarget::Last,
+                (None, false, true) => restore_command::RestoreTarget::All,
+                _ => {
+                    eprintln!("specify exactly one of: <OP_ID>, --last, --all");
+                    std::process::exit(2);
+                }
+            };
+            restore_command::run(target, &db, json);
         }
     }
 }
