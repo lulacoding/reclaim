@@ -7,5 +7,5 @@ mod migrations;
 mod store;
 
 pub use error::{Error, Result};
-pub use journal::{OperationId, PendingOperation, PlannedItem};
+pub use journal::{OperationId, PendingItem, PendingOperation, PlannedItem};
 pub use store::{ScanId, ScanRecord, Store};

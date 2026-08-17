@@ -5,7 +5,9 @@
 
 mod error;
 mod quarantine;
+mod recovery;
 mod volume;
 
 pub use error::{Error, Result};
 pub use quarantine::{quarantine, QuarantineRequest};
+pub use recovery::{recover, RecoveredItem, RecoveredLocation};

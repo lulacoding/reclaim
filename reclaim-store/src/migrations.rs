@@ -25,8 +25,9 @@ const MIGRATIONS: &[&str] = &[
     // 2: the quarantine journal — operations, quarantine_items, audit_log
     // (V1_DESIGN §12, BUILD_PLAN M3). `quarantine_items.status` starts
     // 'pending' (written by begin_operation, before anything moves) and
-    // becomes 'quarantined' (complete_operation, after). Reconciling a
-    // 'pending' row left behind by a crash is a later task.
+    // becomes 'quarantined' (complete_operation, after — or crash
+    // recovery, if the move turns out to have already happened) or
+    // 'reverted' (crash recovery, if it turns out it never moved).
     "CREATE TABLE operations (
         op_id INTEGER PRIMARY KEY AUTOINCREMENT,
         kind TEXT NOT NULL,

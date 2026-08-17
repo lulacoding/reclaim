@@ -6,8 +6,10 @@
 //! (performed elsewhere; this crate never mutates the filesystem) have
 //! happened. Because intent is durable first, a crash between the two
 //! leaves a `pending` operation for [`Store::recover`] to find on the
-//! next startup — reconciling it against the filesystem is a later
-//! task, once move logic exists.
+//! next startup; [`Store::pending_items`] plus [`Store::reconcile_item_at_source`]
+//! / [`Store::reconcile_item_quarantined`] let a caller (see
+//! `reclaim-action`'s crash recovery) reconcile each item against the
+//! filesystem and correct the manifest to match.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -43,6 +45,15 @@ pub struct PendingOperation {
     pub kind: String,
     pub started_at: SystemTime,
     pub item_count: i64,
+}
+
+/// One item still `pending` under a [`PendingOperation`] — journaled
+/// intent, but not yet known whether the move happened before the crash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingItem {
+    pub item_id: i64,
+    pub source_path: PathBuf,
+    pub quarantine_path: PathBuf,
 }
 
 impl Store {
@@ -127,6 +138,65 @@ impl Store {
         })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Into::into)
+    }
+
+    /// Items still `pending` under operation `op_id` — what a crash-
+    /// recovery caller must check against the filesystem to learn
+    /// whether each one's move happened before the crash.
+    pub fn pending_items(&self, op_id: OperationId) -> Result<Vec<PendingItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_path, quarantine_path FROM quarantine_items
+             WHERE op_id = ?1 AND status = 'pending'",
+        )?;
+        let rows = stmt.query_map(params![op_id.0], |row| {
+            Ok(PendingItem {
+                item_id: row.get(0)?,
+                source_path: PathBuf::from(row.get::<_, String>(1)?),
+                quarantine_path: PathBuf::from(row.get::<_, String>(2)?),
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Reconciles a crash-orphaned item found still at its source: the
+    /// move never happened, so the journal is corrected to say so
+    /// instead of continuing to claim the item might still be mid-flight.
+    pub fn reconcile_item_at_source(&self, item_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE quarantine_items SET status = 'reverted' WHERE id = ?1 AND status = 'pending'",
+            params![item_id],
+        )?;
+        Ok(())
+    }
+
+    /// Reconciles a crash-orphaned item found already moved into
+    /// quarantine: finishes what `complete_operation` would have done
+    /// for just this item, stamping its restore deadline from now.
+    pub fn reconcile_item_quarantined(&self, item_id: i64, grace_period_days: u32) -> Result<()> {
+        let now = SystemTime::now();
+        let now_ns = to_unix_nanos(now);
+        let deadline_ns =
+            to_unix_nanos(now + Duration::from_secs(u64::from(grace_period_days) * 86_400));
+        self.conn.execute(
+            "UPDATE quarantine_items
+             SET status = 'quarantined', moved_at_unix_ns = ?1, restore_deadline_unix_ns = ?2
+             WHERE id = ?3 AND status = 'pending'",
+            params![now_ns, deadline_ns, item_id],
+        )?;
+        Ok(())
+    }
+
+    /// Marks operation `op_id` as reconciled: every one of its items now
+    /// has a status recovery derived from the filesystem, not just
+    /// unresolved journaled intent, so it's no longer returned by
+    /// [`Store::recover`].
+    pub fn mark_operation_reconciled(&self, op_id: OperationId) -> Result<()> {
+        self.conn.execute(
+            "UPDATE operations SET status = 'reconciled' WHERE op_id = ?1",
+            params![op_id.0],
+        )?;
+        Ok(())
     }
 }
 
