@@ -69,6 +69,15 @@ const MIGRATIONS: &[&str] = &[
     // sibling if that path was occupied at restore time.
     "ALTER TABLE quarantine_items ADD COLUMN restored_path TEXT;
     ALTER TABLE quarantine_items ADD COLUMN restored_at_unix_ns INTEGER;",
+    // 4: the managed-store tool-presence cache (BUILD_PLAN M4 item 1).
+    // One row per tool, replaced wholesale on every fresh probe -- only
+    // the last-known result matters, so there's no history to keep.
+    "CREATE TABLE tool_cache (
+        tool TEXT PRIMARY KEY,
+        present INTEGER NOT NULL,
+        path TEXT,
+        checked_at_unix_ns INTEGER NOT NULL
+    );",
 ];
 
 /// Brings `conn`'s schema up to the latest version, running only the
