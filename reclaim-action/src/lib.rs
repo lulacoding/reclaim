@@ -3,6 +3,7 @@
 //! runners, and undo — every mutation consults `reclaim_core::is_protected`
 //! first.
 
+mod command_runner;
 mod error;
 mod quarantine;
 mod recovery;
@@ -10,6 +11,10 @@ mod restore;
 mod tool_detection;
 mod volume;
 
+pub use command_runner::{
+    commands_for, run_reclaim_command, CommandRunner, CommandSpec, ReclaimCommandResult,
+    StepOutput, SystemCommandRunner,
+};
 pub use error::{Error, Result};
 pub use quarantine::{quarantine, QuarantineRequest};
 pub use recovery::{recover, RecoveredItem, RecoveredLocation};

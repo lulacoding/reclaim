@@ -27,6 +27,9 @@ pub enum Error {
     #[error("windows API error: {0}")]
     Windows(#[from] windows::core::Error),
 
+    #[error("no native reclaim command is known for store {0:?}")]
+    UnknownStore(String),
+
     #[error(
         "crash recovery found item neither at its source {} nor in quarantine {}; \
          the move primitive is a rename, so this should be unreachable",

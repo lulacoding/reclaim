@@ -1,0 +1,188 @@
+//! Native-command runner for managed-store reclaim (BUILD_PLAN M4 item 2,
+//! ADR-009): once a store's tool is confirmed present
+//! ([`crate::detect_tool`]), reclaim its cache by invoking the tool's own
+//! cleanup command rather than touching its files directly -- raw deletion
+//! under a lock can corrupt a package manager's own state. Every step run
+//! is journaled to the audit log exactly as it happened, including a
+//! non-zero exit and its stderr, so a partial failure is always visible
+//! and never silently swallowed.
+//!
+//! Gradle and Docker are deliberately absent from [`commands_for`]:
+//! Gradle's global cache has no real cleanup command (RULES.md STORE-007
+//! reclaims it by directory move, handled by [`crate::quarantine`]
+//! instead), and Docker gets its own guarded flow (BUILD_PLAN M4 item 4 --
+//! `system df`/`system prune`, `--volumes` hard-blocked).
+
+use std::path::Path;
+use std::process::Command;
+use std::time::SystemTime;
+
+use reclaim_core::Tier;
+use reclaim_store::{AuditLogEntry, Store};
+
+use crate::error::{Error, Result};
+
+/// One command line to run: a program and its fixed arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandSpec {
+    pub program: &'static str,
+    pub args: &'static [&'static str],
+}
+
+impl CommandSpec {
+    /// The human-readable command line, for audit trails and test
+    /// assertions (e.g. `"npm cache clean --force"`).
+    pub fn command_line(&self) -> String {
+        std::iter::once(self.program)
+            .chain(self.args.iter().copied())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// One command's captured result: exit code, stdout, and stderr.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StepOutput {
+    pub command_line: String,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl StepOutput {
+    pub fn succeeded(&self) -> bool {
+        self.exit_code == Some(0)
+    }
+}
+
+/// Runs a single command line, capturing its result. Implemented for real
+/// execution by [`SystemCommandRunner`]; tests supply a mock instead so no
+/// store's actual GC ever runs in CI.
+pub trait CommandRunner {
+    fn run(&self, spec: &CommandSpec) -> std::io::Result<StepOutput>;
+}
+
+/// The real runner: `std::process::Command`.
+pub struct SystemCommandRunner;
+
+impl CommandRunner for SystemCommandRunner {
+    fn run(&self, spec: &CommandSpec) -> std::io::Result<StepOutput> {
+        let output = Command::new(spec.program).args(spec.args).output()?;
+        Ok(StepOutput {
+            command_line: spec.command_line(),
+            exit_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
+}
+
+/// Which command(s) reclaim `store_name`'s cache, in order (RULES.md §2).
+/// `None` for a name this runner doesn't own -- see the module doc.
+pub fn commands_for(store_name: &str) -> Option<&'static [CommandSpec]> {
+    match store_name {
+        "npm" => Some(&[
+            CommandSpec {
+                program: "npm",
+                args: &["cache", "verify"],
+            },
+            CommandSpec {
+                program: "npm",
+                args: &["cache", "clean", "--force"],
+            },
+        ]),
+        "yarn" => Some(&[CommandSpec {
+            program: "yarn",
+            args: &["cache", "clean"],
+        }]),
+        "pnpm" => Some(&[CommandSpec {
+            program: "pnpm",
+            args: &["store", "prune"],
+        }]),
+        "pip" => Some(&[CommandSpec {
+            program: "pip",
+            args: &["cache", "purge"],
+        }]),
+        "cargo" => Some(&[CommandSpec {
+            program: "cargo",
+            args: &["cache", "--autoclean"],
+        }]),
+        "nuget" => Some(&[CommandSpec {
+            program: "dotnet",
+            args: &["nuget", "locals", "all", "--clear"],
+        }]),
+        "go" => Some(&[CommandSpec {
+            program: "go",
+            args: &["clean", "-cache"],
+        }]),
+        _ => None,
+    }
+}
+
+/// Outcome of running a store's whole reclaim command sequence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReclaimCommandResult {
+    pub store_name: String,
+    pub steps: Vec<StepOutput>,
+    /// `true` only if every step exited 0. `false` on the first non-zero
+    /// exit, at which point no further step in the sequence is run.
+    pub succeeded: bool,
+}
+
+/// Runs `store_name`'s cleanup command sequence via `runner`, stopping at
+/// the first failing step, and journals one `audit_log` row per step
+/// actually run. `store_dir` is the store's cache directory (from tool
+/// detection) recorded alongside each row -- it's what's being reclaimed,
+/// even though this runner never touches it directly.
+///
+/// Never reimplements a tool's own GC (ADR-009): every step here is
+/// exactly the tool's own command line from RULES.md §2. Refuses
+/// `store_name`s this runner doesn't own (see [`commands_for`]) rather
+/// than guessing at a command.
+pub fn run_reclaim_command(
+    store: &Store,
+    runner: &dyn CommandRunner,
+    store_name: &str,
+    store_dir: &Path,
+    now: SystemTime,
+) -> Result<ReclaimCommandResult> {
+    let specs =
+        commands_for(store_name).ok_or_else(|| Error::UnknownStore(store_name.to_string()))?;
+
+    let mut steps = Vec::with_capacity(specs.len());
+    let mut succeeded = true;
+
+    for spec in specs {
+        let output = runner.run(spec)?;
+        let step_ok = output.succeeded();
+
+        store.record_audit(AuditLogEntry {
+            ts: now,
+            action: "native_command",
+            source_path: store_dir,
+            quarantine_path: None,
+            // Actual reclaimed size delta is BUILD_PLAN M4 item 3 (re-measure
+            // free space), not yet wired here -- 0 means "not measured",
+            // never a claim that nothing was reclaimed.
+            size_bytes: 0,
+            tier: Tier::ProbablySafe,
+            decided_by: "user",
+            reclaim_method: reclaim_core::ReclaimMethod::Command(vec![output.command_line.clone()]),
+            process_holding: None,
+            result: if step_ok { "ok" } else { "failed" },
+            note: (!step_ok).then_some(output.stderr.as_str()),
+        })?;
+
+        steps.push(output);
+        if !step_ok {
+            succeeded = false;
+            break;
+        }
+    }
+
+    Ok(ReclaimCommandResult {
+        store_name: store_name.to_string(),
+        steps,
+        succeeded,
+    })
+}
