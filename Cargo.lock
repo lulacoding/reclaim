@@ -407,6 +407,7 @@ name = "reclaim-action"
 version = "0.0.0"
 dependencies = [
  "reclaim-core",
+ "reclaim-detect",
  "reclaim-store",
  "tempfile",
  "thiserror",

@@ -10,6 +10,7 @@ name = "reclaim_action"
 
 [dependencies]
 reclaim-core = { workspace = true }
+reclaim-detect = { workspace = true }
 reclaim-store = { workspace = true }
 thiserror = { workspace = true }
 
