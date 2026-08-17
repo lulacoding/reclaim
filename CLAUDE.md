@@ -20,7 +20,7 @@ The one fatal failure is deleting data the user cares about. Design every action
 SAFETY.md (the guarantee + invariants), THREAT_MODEL.md, DECISIONS.md (ADRs), RULES.md
 (detection catalog — never change a rule without a CHANGELOG entry), TESTING.md (the matrix + drills).
 
-## Workspace (Cargo workspace, MSRV 1.78+, MSVC; launch-on-demand, no daemon)
+## Workspace (Cargo workspace, MSRV 1.88+ (dua-core needs edition2024 + let_chains), MSVC; launch-on-demand, no daemon)
 - reclaim-core   — types, config (TOML), errors, the ProtectedPaths denylist + is_protected
 - reclaim-scan   — streaming parallel walker (dua-core/ignore); hardlink dedup; reparse + cloud-placeholder handling (never open placeholders)
 - reclaim-detect — deterministic rule catalog → tiers (Safe/Probably-safe/Unknown/Never-touch)
@@ -40,3 +40,26 @@ SAFETY.md (the guarantee + invariants), THREAT_MODEL.md, DECISIONS.md (ADRs), RU
 
 ## Compact instructions
 When summarizing, preserve: the data-safety golden rules, failing test names, and modified files.
+
+## Token discipline (follow every session)
+- ALWAYS route cargo/git/shell through rtk: `rtk cargo build`, `rtk cargo test`,
+  `rtk cargo clippy -- -D warnings`, `rtk cargo fmt --all`, `rtk git status`, `rtk git diff`.
+  Never call raw `cargo`/`git` in Bash — rtk compresses the output. (The rtk hook rewrites Bash
+  calls, but invoke it explicitly so it's never missed.)
+- Prefer `rg` / `rtk grep` over reading whole files. When you must read a file, read only the
+  specific line range you need — not the whole file.
+- Do NOT re-read a file already read this session. Do NOT re-run a build/test whose output is
+  already in context unless something changed.
+- Use rust-analyzer (LSP) for types, signatures, and errors instead of reading files to infer
+  them.
+- One crate at a time: when a task is scoped to a single crate, work from that crate's directory
+  and its per-crate CLAUDE.md; don't pull the whole workspace into context.
+- Keep summaries tight: when reporting back, give the conclusion + failing test names + changed
+  files, not full logs or full file dumps.
+
+## Session hygiene (I, the human, run these — noted here so you expect them)
+- I work one prompt at a time and `/clear` between prompts. Treat each prompt as a fresh,
+  self-contained task; don't assume earlier conversation is still in context.
+- If you need context from a previous step, it lives in the docs (docs/decisions/DECISIONS.md,
+  docs/planning/BUILD_PLAN.md, CHANGELOG.md) or per-crate CLAUDE.md — read the specific file,
+  don't ask me to re-explain.

@@ -128,7 +128,5 @@ fn trim_trailing_dots_and_spaces(component: &str) -> String {
     if !component.is_empty() && component.chars().all(|c| c == '.') {
         return component.to_string();
     }
-    component
-        .trim_end_matches(|c: char| c == '.' || c == ' ')
-        .to_string()
+    component.trim_end_matches(['.', ' ']).to_string()
 }

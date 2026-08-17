@@ -6,8 +6,10 @@ pub mod config;
 pub mod error;
 pub mod model;
 pub mod paths;
+pub mod scan_entry;
 
 pub use config::{Config, MIN_GRACE_PERIOD_DAYS};
 pub use error::{Error, Result};
 pub use model::{RebuildCost, ReclaimMethod, Tier};
 pub use paths::ProtectedPaths;
+pub use scan_entry::{EntryKind, ScanEntry};

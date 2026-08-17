@@ -10,3 +10,10 @@ name = "reclaim_scan"
 
 [dependencies]
 reclaim-core = { workspace = true }
+dua-core = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_Security"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,5 +1,9 @@
 /target
 /dist
+/benches/walker-bench/target
+/benches/walker-bench/bench_output.txt
+/scan-result.json
+/uninstall.log
 node_modules/
 dev.db
 *.db-journal

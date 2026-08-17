@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reclaim — minimal per-user MSI stub (BUILD_PLAN.md M0).
+
+  Installs dq.exe to %LOCALAPPDATA%\Reclaim. Per-user, no admin required
+  (V1_DESIGN.md §16, ADR-010). This is intentionally minimal: one file,
+  one component — enough to prove install/uninstall works. Real features
+  (icons, shortcuts, PATH registration, UI) come later.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Reclaim"
+    Manufacturer="Reclaim"
+    Version="0.0.0"
+    Scope="perUser"
+    UpgradeCode="63ee678b-1c20-42ce-8914-9a1f1ae7f18c">
+    <!--
+      TODO: the UpgradeCode above is a placeholder, NOT a real GUID.
+      Generate a real one before shipping anything outside this machine:
+        [guid]::NewGuid()
+      Then replace the value above and never change it again — the
+      UpgradeCode is what lets MajorUpgrade recognize future versions as
+      upgrades of this product instead of unrelated installs.
+    -->
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Reclaim is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Reclaim">
+        <Component Id="DqExe" Guid="*">
+          <File Id="DqExe" Source="$(var.DqExePath)" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <ComponentRef Id="DqExe" />
+    </Feature>
+  </Package>
+</Wix>

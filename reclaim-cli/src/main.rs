@@ -1,6 +1,10 @@
 //! `dq` — the Reclaim command-line interface.
 
-use clap::Parser;
+mod scan_command;
+
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
@@ -8,9 +12,33 @@ use clap::Parser;
     version,
     about = "Reclaim disk-space forensics + cleanup tool"
 )]
-struct Cli;
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Scan a directory and report size totals. Read-only.
+    Scan {
+        /// Directory to scan. Defaults to the current directory.
+        path: Option<PathBuf>,
+        /// Print the summary as JSON instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+        /// State database path. Defaults to `%LOCALAPPDATA%\Reclaim\reclaim.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
+}
 
 fn main() {
-    let _cli = Cli::parse();
-    println!("dq {}", env!("CARGO_PKG_VERSION"));
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Scan { path, json, db } => {
+            let root = path.unwrap_or_else(|| PathBuf::from("."));
+            let db = db.unwrap_or_else(scan_command::default_db_path);
+            scan_command::run(&root, json, &db);
+        }
+    }
 }

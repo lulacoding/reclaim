@@ -10,3 +10,5 @@ name = "reclaim_store"
 
 [dependencies]
 reclaim-core = { workspace = true }
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
