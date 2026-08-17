@@ -408,6 +408,9 @@ version = "0.0.0"
 dependencies = [
  "reclaim-core",
  "reclaim-store",
+ "tempfile",
+ "thiserror",
+ "windows",
 ]
 
 [[package]]
