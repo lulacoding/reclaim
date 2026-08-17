@@ -220,12 +220,12 @@ fn confirm(plan: &CleanPlan) -> bool {
     if plan.items.is_empty() {
         return true;
     }
-    print!(
+    eprint!(
         "Quarantine {} item(s) totaling {} (dedup, size-on-disk)? [y/N]: ",
         plan.items.len(),
         crate::scan_command::human_bytes(plan.planned_bytes)
     );
-    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let _ = std::io::Write::flush(&mut std::io::stderr());
     let mut answer = String::new();
     if std::io::stdin().read_line(&mut answer).is_err() {
         return false;
