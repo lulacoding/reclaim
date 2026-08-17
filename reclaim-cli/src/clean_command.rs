@@ -83,6 +83,192 @@ fn is_selectable(candidate: &Candidate) -> bool {
     selectable_tier && matches!(candidate.method, Some(ReclaimMethod::Move))
 }
 
+use reclaim_action::{quarantine, QuarantineRequest};
+use reclaim_core::ProtectedPaths;
+use reclaim_store::Store;
+
+/// One item `execute` successfully quarantined.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct QuarantinedResult {
+    pub path: PathBuf,
+    pub quarantine_path: PathBuf,
+    pub dedup_size: u64,
+}
+
+/// One item `execute` failed to quarantine — the batch continues past a
+/// single failure rather than aborting (partial-failure handling; full
+/// per-command result tracking is M4 scope, but a single denylist veto or
+/// in-use file must not stop the rest of the batch from proceeding).
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct CleanFailure {
+    pub path: PathBuf,
+    pub error: String,
+}
+
+/// The actual outcome of running a [`CleanPlan`] through
+/// [`reclaim_action::quarantine`]. `pending_reclaim_bytes` is the sum of
+/// `size_on_disk` for items that actually moved — see this module's doc
+/// comment for why this is never called "reclaimed".
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct CleanExecution {
+    pub quarantined: Vec<QuarantinedResult>,
+    pub pending_reclaim_bytes: u64,
+    pub failures: Vec<CleanFailure>,
+}
+
+fn execute(
+    store: &Store,
+    protected: &ProtectedPaths,
+    staging_root: &Path,
+    grace_period_days: u32,
+    plan: &CleanPlan,
+) -> CleanExecution {
+    let mut quarantined = Vec::new();
+    let mut failures = Vec::new();
+    let mut pending_reclaim_bytes = 0u64;
+
+    for item in &plan.items {
+        let request = QuarantineRequest {
+            source_path: item.path.clone(),
+            size_bytes: item.logical_size,
+            size_on_disk: item.dedup_size,
+            tier: item.tier,
+            reclaim_method: ReclaimMethod::Move,
+        };
+        match quarantine(store, protected, staging_root, grace_period_days, request) {
+            Ok(quarantine_path) => {
+                pending_reclaim_bytes += item.dedup_size;
+                quarantined.push(QuarantinedResult {
+                    path: item.path.clone(),
+                    quarantine_path,
+                    dedup_size: item.dedup_size,
+                });
+            }
+            Err(err) => failures.push(CleanFailure { path: item.path.clone(), error: err.to_string() }),
+        }
+    }
+
+    CleanExecution { quarantined, pending_reclaim_bytes, failures }
+}
+
+/// `%LOCALAPPDATA%\Reclaim\quarantine`, the default staging root
+/// (V1_DESIGN §12) — mirrors `scan_command::default_db_path`.
+pub fn default_quarantine_dir() -> PathBuf {
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(local_app_data).join("Reclaim").join("quarantine")
+}
+
+/// What happened for a given `dq clean` invocation — captures all three
+/// outcomes (dry-run, user-aborted, executed) as one JSON shape so a
+/// script driving `--json` can switch on `outcome` instead of guessing
+/// from which fields are present.
+#[derive(Serialize, Debug)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+enum CleanOutcome {
+    DryRun { plan: CleanPlan },
+    Aborted { plan: CleanPlan },
+    Executed { plan: CleanPlan, execution: CleanExecution },
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run(
+    root: &Path,
+    tier_filter: Option<Tier>,
+    dry_run: bool,
+    yes: bool,
+    json: bool,
+    db: &Path,
+    quarantine_dir: &Path,
+    grace_period_days: u32,
+) {
+    let plan = build_plan(root, tier_filter);
+
+    if !json {
+        print_plan_human(&plan);
+    }
+
+    if dry_run {
+        if json {
+            print_json(&CleanOutcome::DryRun { plan });
+        } else {
+            println!("(dry run — nothing moved)");
+        }
+        return;
+    }
+
+    if !yes && !confirm(&plan) {
+        if json {
+            print_json(&CleanOutcome::Aborted { plan });
+        } else {
+            println!("Aborted — nothing changed.");
+        }
+        return;
+    }
+
+    let store = crate::store_util::open_or_exit(db);
+    let protected = ProtectedPaths::windows_defaults();
+    let execution = execute(&store, &protected, quarantine_dir, grace_period_days, &plan);
+
+    if json {
+        print_json(&CleanOutcome::Executed { plan, execution });
+    } else {
+        print_execution_human(&execution);
+    }
+}
+
+fn confirm(plan: &CleanPlan) -> bool {
+    if plan.items.is_empty() {
+        return true;
+    }
+    print!(
+        "Quarantine {} item(s) totaling {} (dedup, size-on-disk)? [y/N]: ",
+        plan.items.len(),
+        crate::scan_command::human_bytes(plan.planned_bytes)
+    );
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() {
+        return false;
+    }
+    matches!(answer.trim().chars().next(), Some('y') | Some('Y'))
+}
+
+fn print_plan_human(plan: &CleanPlan) {
+    println!("{}", plan.root.display());
+    if plan.items.is_empty() {
+        println!("  Nothing to clean.");
+        return;
+    }
+    for item in &plan.items {
+        println!(
+            "    {:>10}  {}  rule={}",
+            crate::scan_command::human_bytes(item.dedup_size),
+            item.path.display(),
+            item.rule_id.unwrap_or("-"),
+        );
+    }
+    println!(
+        "  Planned: {} across {} item(s)",
+        crate::scan_command::human_bytes(plan.planned_bytes),
+        plan.items.len()
+    );
+}
+
+fn print_execution_human(execution: &CleanExecution) {
+    println!(
+        "Quarantined {} item(s); {} pending reclaim (freed once the grace period ends, or on purge).",
+        execution.quarantined.len(),
+        crate::scan_command::human_bytes(execution.pending_reclaim_bytes),
+    );
+    for failure in &execution.failures {
+        eprintln!("  failed: {} ({})", failure.path.display(), failure.error);
+    }
+}
+
+fn print_json<T: Serialize>(value: &T) {
+    println!("{}", serde_json::to_string_pretty(value).expect("always serializes"));
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -145,5 +331,42 @@ mod tests {
         let plan = build_plan(dir.path(), None);
 
         assert!(plan.items.is_empty());
+    }
+
+    use reclaim_core::ProtectedPaths;
+    use reclaim_store::Store;
+
+    #[test]
+    fn execute_quarantines_selected_items_and_sums_pending_reclaim() {
+        let dir = target_dir_fixture();
+        let node_modules = dir.path().join("node_modules");
+        fs::create_dir_all(&node_modules).unwrap();
+        fs::write(node_modules.join("index.js"), vec![1u8; 3000]).unwrap();
+        let staging_root = dir.path().join("staging");
+
+        let plan = build_plan(dir.path(), None);
+        assert_eq!(plan.items.len(), 1);
+
+        let store = Store::open_in_memory().unwrap();
+        let protected = ProtectedPaths::from_roots::<[&str; 0], &str>([]);
+        let execution = execute(&store, &protected, &staging_root, 30, &plan);
+
+        assert!(!node_modules.exists(), "source must be gone after quarantine");
+        assert_eq!(execution.quarantined.len(), 1);
+        assert!(execution.pending_reclaim_bytes >= 3000);
+        assert!(execution.failures.is_empty());
+    }
+
+    #[test]
+    fn execute_on_an_empty_plan_does_nothing() {
+        let dir = target_dir_fixture();
+        let plan = CleanPlan { root: dir.path().to_path_buf(), items: Vec::new(), planned_bytes: 0 };
+        let store = Store::open_in_memory().unwrap();
+        let protected = ProtectedPaths::from_roots::<[&str; 0], &str>([]);
+
+        let execution = execute(&store, &protected, &dir.path().join("staging"), 30, &plan);
+
+        assert!(execution.quarantined.is_empty());
+        assert_eq!(execution.pending_reclaim_bytes, 0);
     }
 }

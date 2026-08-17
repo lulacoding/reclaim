@@ -3,6 +3,7 @@
 mod clean_command;
 mod list_command;
 mod scan_command;
+mod store_util;
 
 use std::path::PathBuf;
 
