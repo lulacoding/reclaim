@@ -63,6 +63,12 @@ const MIGRATIONS: &[&str] = &[
         result TEXT NOT NULL,
         note TEXT
     );",
+    // 3: restore bookkeeping on quarantine_items (BUILD_PLAN M3 item 6,
+    // THREAT_MODEL T13). `restored_path` records where an item actually
+    // landed — its original `source_path`, or a conflict-suffixed
+    // sibling if that path was occupied at restore time.
+    "ALTER TABLE quarantine_items ADD COLUMN restored_path TEXT;
+    ALTER TABLE quarantine_items ADD COLUMN restored_at_unix_ns INTEGER;",
 ];
 
 /// Brings `conn`'s schema up to the latest version, running only the

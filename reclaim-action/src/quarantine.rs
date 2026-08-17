@@ -111,22 +111,24 @@ fn unique_operation_tag() -> String {
     format!("op-{nanos:x}-{seq:x}")
 }
 
-fn wide(path: &Path) -> Vec<u16> {
+pub(crate) fn wide(path: &Path) -> Vec<u16> {
     path.as_os_str()
         .encode_wide()
         .chain(std::iter::once(0))
         .collect()
 }
 
-/// The only place `reclaim-action` touches the source item itself: a
-/// same-volume rename via `MoveFileExW`. Deliberately omits
-/// `MOVEFILE_COPY_ALLOWED` — the caller has already verified same-volume,
-/// and without that flag the OS itself refuses a cross-volume move rather
-/// than silently falling back to copy-then-delete if that check were ever
-/// wrong. `MOVEFILE_WRITE_THROUGH` makes the call block until the move is
-/// flushed, so a crash right after this returns still leaves the item
-/// findable at its destination.
-fn move_file(source: &Path, dest: &Path) -> Result<()> {
+/// The one primitive `reclaim-action` uses to touch an item's real
+/// location, in either direction: a same-volume rename via `MoveFileExW`
+/// (used here for quarantine, and by [`crate::restore`] for the move
+/// back). Deliberately omits `MOVEFILE_COPY_ALLOWED` — the caller has
+/// already verified same-volume, and without that flag the OS itself
+/// refuses a cross-volume move rather than silently falling back to
+/// copy-then-delete if that check were ever wrong; it also means the call
+/// never overwrites an existing destination. `MOVEFILE_WRITE_THROUGH`
+/// makes the call block until the move is flushed, so a crash right after
+/// this returns still leaves the item findable at its destination.
+pub(crate) fn move_file(source: &Path, dest: &Path) -> Result<()> {
     let source_wide = wide(source);
     let dest_wide = wide(dest);
     // SAFETY: both buffers are NUL-terminated UTF-16 and valid for the

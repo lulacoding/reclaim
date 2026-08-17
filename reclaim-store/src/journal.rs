@@ -56,6 +56,20 @@ pub struct PendingItem {
     pub quarantine_path: PathBuf,
 }
 
+/// One item currently held in quarantine (`status = 'quarantined'`) — what
+/// a restore needs to move it back: where it lives now, where it came
+/// from, and the fields the restore's audit-log entry reports alongside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuarantinedItem {
+    pub item_id: i64,
+    pub op_id: OperationId,
+    pub source_path: PathBuf,
+    pub quarantine_path: PathBuf,
+    pub size_bytes: u64,
+    pub tier: Tier,
+    pub reclaim_method: ReclaimMethod,
+}
+
 impl Store {
     /// Journals `items` as `pending` under a new operation of kind
     /// `kind`, **before** any of them actually moves. Returns the
@@ -198,6 +212,89 @@ impl Store {
         )?;
         Ok(())
     }
+
+    /// Items still quarantined (`status = 'quarantined'`) under operation
+    /// `op_id` — what [`crate::Store::begin_restore`]'s caller restores
+    /// when asked to restore that one operation.
+    pub fn quarantined_items(&self, op_id: OperationId) -> Result<Vec<QuarantinedItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method
+             FROM quarantine_items WHERE op_id = ?1 AND status = 'quarantined'",
+        )?;
+        let rows = stmt.query_map(params![op_id.0], row_to_quarantined_item)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Every item currently quarantined, across every operation — what
+    /// restore-all restores.
+    pub fn all_quarantined_items(&self) -> Result<Vec<QuarantinedItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method
+             FROM quarantine_items WHERE status = 'quarantined'",
+        )?;
+        let rows = stmt.query_map([], row_to_quarantined_item)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Journals intent to restore the quarantine items named by
+    /// `item_ids` as a new operation of kind `"restore"`, **before** any
+    /// of them actually moves back — mirroring [`Store::begin_operation`]
+    /// for the opposite direction. Returns the restore operation's id,
+    /// which [`Store::complete_restore`] uses to mark it done once the
+    /// moves have happened.
+    pub fn begin_restore(&self, item_ids: &[i64]) -> Result<OperationId> {
+        let started_at = to_unix_nanos(SystemTime::now());
+        self.conn.execute(
+            "INSERT INTO operations (kind, started_at_unix_ns, completed_at_unix_ns, item_count, status)
+             VALUES ('restore', ?1, NULL, ?2, 'pending')",
+            params![started_at, item_ids.len() as i64],
+        )?;
+        Ok(OperationId(self.conn.last_insert_rowid()))
+    }
+
+    /// Marks a single quarantined item restored to `restored_path` —
+    /// its original source path, or a conflict-suffixed sibling if that
+    /// path was occupied (THREAT_MODEL T13). It stops being returned by
+    /// [`Store::quarantined_items`]/[`Store::all_quarantined_items`].
+    pub fn complete_restore_item(&self, item_id: i64, restored_path: &Path) -> Result<()> {
+        let now_ns = to_unix_nanos(SystemTime::now());
+        self.conn.execute(
+            "UPDATE quarantine_items
+             SET status = 'restored', restored_path = ?1, restored_at_unix_ns = ?2
+             WHERE id = ?3 AND status = 'quarantined'",
+            params![path_str(restored_path), now_ns, item_id],
+        )?;
+        Ok(())
+    }
+
+    /// Marks restore operation `op_id` done, **after** every one of its
+    /// items has actually moved back.
+    pub fn complete_restore(&self, op_id: OperationId) -> Result<()> {
+        let now_ns = to_unix_nanos(SystemTime::now());
+        self.conn.execute(
+            "UPDATE operations SET completed_at_unix_ns = ?1, status = 'complete' WHERE op_id = ?2",
+            params![now_ns, op_id.0],
+        )?;
+        Ok(())
+    }
+}
+
+fn row_to_quarantined_item(row: &rusqlite::Row) -> rusqlite::Result<QuarantinedItem> {
+    Ok(QuarantinedItem {
+        item_id: row.get(0)?,
+        op_id: OperationId(row.get(1)?),
+        source_path: PathBuf::from(row.get::<_, String>(2)?),
+        quarantine_path: PathBuf::from(row.get::<_, String>(3)?),
+        size_bytes: row.get(4)?,
+        tier: serde_json::from_str(&row.get::<_, String>(5)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        reclaim_method: serde_json::from_str(&row.get::<_, String>(6)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+    })
 }
 
 fn path_str(p: &Path) -> String {
