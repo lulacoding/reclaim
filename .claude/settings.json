@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Read", "Glob", "Grep",
+      "Bash(cargo build:*)", "Bash(cargo test:*)", "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)", "Bash(cargo check:*)",
+      "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)",
+      "Bash(npm ci)", "Bash(npm run build)", "Bash(rtk:*)",
+      "Bash(dq scan:*)", "Bash(dq list:*)", "Bash(dq status:*)",
+      "Bash(dq clean --dry-run:*)"
+    ],
+    "ask": [
+      "Edit", "Write",
+      "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)",
+      "Bash(cargo install:*)", "Bash(npm install:*)",
+      "Bash(dq clean:*)", "Bash(dq restore:*)"
+    ],
+    "deny": [
+      "Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)",
+      "Bash(dq purge:*)",
+      "Bash(*--volumes*)",
+      "Bash(rm -rf:*)", "Bash(rm -fr:*)", "Bash(rm -r:*)",
+      "Bash(*rmdir /s*)", "Bash(*rd /s*)", "Bash(del /*)",
+      "Bash(*Remove-Item*Recurse*)", "Bash(*Remove-Item*Force*)",
+      "Bash(git clean:*)", "Bash(format:*)", "Bash(cipher /w:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"%CLAUDE_PROJECT_DIR%\\.claude\\hooks\\guard-destructive.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
