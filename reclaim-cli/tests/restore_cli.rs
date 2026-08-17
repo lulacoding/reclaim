@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn workspace_target_dir() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("target");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("target");
     fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -39,7 +41,11 @@ fn restore_all_restores_everything_byte_identical() {
         .arg(&quarantine_dir)
         .output()
         .expect("run dq clean --yes");
-    assert!(clean_output.status.success(), "stderr: {}", String::from_utf8_lossy(&clean_output.stderr));
+    assert!(
+        clean_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&clean_output.stderr)
+    );
     assert!(!node_modules.exists());
 
     let restore_output = Command::new(env!("CARGO_BIN_EXE_dq"))
@@ -50,10 +56,20 @@ fn restore_all_restores_everything_byte_identical() {
         .arg(&db)
         .output()
         .expect("run dq restore --all");
-    assert!(restore_output.status.success(), "stderr: {}", String::from_utf8_lossy(&restore_output.stderr));
+    assert!(
+        restore_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&restore_output.stderr)
+    );
 
-    assert!(node_modules.join("index.js").exists(), "restore --all must bring everything back");
-    assert_eq!(fs::read(node_modules.join("index.js")).unwrap(), b"const x = 1;");
+    assert!(
+        node_modules.join("index.js").exists(),
+        "restore --all must bring everything back"
+    );
+    assert_eq!(
+        fs::read(node_modules.join("index.js")).unwrap(),
+        b"const x = 1;"
+    );
 
     let result: serde_json::Value = serde_json::from_slice(&restore_output.stdout).unwrap();
     let restored = result["restored"].as_array().unwrap();

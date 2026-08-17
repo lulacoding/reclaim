@@ -146,7 +146,8 @@ fn main() {
         } => {
             let root = path.unwrap_or_else(|| PathBuf::from("."));
             let db = db.unwrap_or_else(scan_command::default_db_path);
-            let quarantine_dir = quarantine_dir.unwrap_or_else(clean_command::default_quarantine_dir);
+            let quarantine_dir =
+                quarantine_dir.unwrap_or_else(clean_command::default_quarantine_dir);
             let grace = grace_period_days
                 .unwrap_or(reclaim_core::MIN_GRACE_PERIOD_DAYS)
                 .max(reclaim_core::MIN_GRACE_PERIOD_DAYS);
@@ -161,7 +162,13 @@ fn main() {
                 grace,
             );
         }
-        Command::Restore { op_id, last, all, json, db } => {
+        Command::Restore {
+            op_id,
+            last,
+            all,
+            json,
+            db,
+        } => {
             let db = db.unwrap_or_else(scan_command::default_db_path);
             let target = match (op_id, last, all) {
                 (Some(id), false, false) => restore_command::RestoreTarget::OpId(id),

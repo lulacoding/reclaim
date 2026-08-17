@@ -71,7 +71,11 @@ pub(crate) fn build_plan(root: &Path, tier_filter: Option<Tier>) -> CleanPlan {
         .collect();
 
     let planned_bytes = items.iter().map(|i| i.dedup_size).sum();
-    CleanPlan { root: root.to_path_buf(), items, planned_bytes }
+    CleanPlan {
+        root: root.to_path_buf(),
+        items,
+        planned_bytes,
+    }
 }
 
 fn is_selectable(candidate: &Candidate) -> bool {
@@ -144,18 +148,27 @@ fn execute(
                     dedup_size: item.dedup_size,
                 });
             }
-            Err(err) => failures.push(CleanFailure { path: item.path.clone(), error: err.to_string() }),
+            Err(err) => failures.push(CleanFailure {
+                path: item.path.clone(),
+                error: err.to_string(),
+            }),
         }
     }
 
-    CleanExecution { quarantined, pending_reclaim_bytes, failures }
+    CleanExecution {
+        quarantined,
+        pending_reclaim_bytes,
+        failures,
+    }
 }
 
 /// `%LOCALAPPDATA%\Reclaim\quarantine`, the default staging root
 /// (V1_DESIGN §12) — mirrors `scan_command::default_db_path`.
 pub fn default_quarantine_dir() -> PathBuf {
     let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(local_app_data).join("Reclaim").join("quarantine")
+    PathBuf::from(local_app_data)
+        .join("Reclaim")
+        .join("quarantine")
 }
 
 /// What happened for a given `dq clean` invocation — captures all three
@@ -165,9 +178,16 @@ pub fn default_quarantine_dir() -> PathBuf {
 #[derive(Serialize, Debug)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 enum CleanOutcome {
-    DryRun { plan: CleanPlan },
-    Aborted { plan: CleanPlan },
-    Executed { plan: CleanPlan, execution: CleanExecution },
+    DryRun {
+        plan: CleanPlan,
+    },
+    Aborted {
+        plan: CleanPlan,
+    },
+    Executed {
+        plan: CleanPlan,
+        execution: CleanExecution,
+    },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -266,7 +286,10 @@ fn print_execution_human(execution: &CleanExecution) {
 }
 
 fn print_json<T: Serialize>(value: &T) {
-    println!("{}", serde_json::to_string_pretty(value).expect("always serializes"));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(value).expect("always serializes")
+    );
 }
 
 #[cfg(test)]
@@ -279,7 +302,9 @@ mod tests {
     use super::*;
 
     fn target_dir_fixture() -> tempfile::TempDir {
-        let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("target");
+        let target_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("target");
         fs::create_dir_all(&target_dir).unwrap();
         tempfile::Builder::new()
             .prefix("dq-clean-plan-fixture-")
@@ -299,7 +324,12 @@ mod tests {
 
         let plan = build_plan(dir.path(), None);
 
-        assert_eq!(plan.items.len(), 1, "only the Safe item should be planned: {:?}", plan.items);
+        assert_eq!(
+            plan.items.len(),
+            1,
+            "only the Safe item should be planned: {:?}",
+            plan.items
+        );
         assert!(plan.items[0].path.ends_with("node_modules"));
         assert_eq!(plan.items[0].tier, Tier::Safe);
         assert!(plan.planned_bytes >= 3000);
@@ -351,7 +381,10 @@ mod tests {
         let protected = ProtectedPaths::from_roots::<[&str; 0], &str>([]);
         let execution = execute(&store, &protected, &staging_root, 30, &plan);
 
-        assert!(!node_modules.exists(), "source must be gone after quarantine");
+        assert!(
+            !node_modules.exists(),
+            "source must be gone after quarantine"
+        );
         assert_eq!(execution.quarantined.len(), 1);
         assert!(execution.pending_reclaim_bytes >= 3000);
         assert!(execution.failures.is_empty());
@@ -360,7 +393,11 @@ mod tests {
     #[test]
     fn execute_on_an_empty_plan_does_nothing() {
         let dir = target_dir_fixture();
-        let plan = CleanPlan { root: dir.path().to_path_buf(), items: Vec::new(), planned_bytes: 0 };
+        let plan = CleanPlan {
+            root: dir.path().to_path_buf(),
+            items: Vec::new(),
+            planned_bytes: 0,
+        };
         let store = Store::open_in_memory().unwrap();
         let protected = ProtectedPaths::from_roots::<[&str; 0], &str>([]);
 

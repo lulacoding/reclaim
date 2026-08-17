@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn workspace_target_dir() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("target");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("target");
     fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -39,7 +41,11 @@ fn status_reflects_the_manifest_after_a_clean() {
         .arg(&quarantine_dir)
         .output()
         .expect("run dq clean --yes");
-    assert!(clean_output.status.success(), "stderr: {}", String::from_utf8_lossy(&clean_output.stderr));
+    assert!(
+        clean_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&clean_output.stderr)
+    );
 
     let status_output = Command::new(env!("CARGO_BIN_EXE_dq"))
         .arg("status")
@@ -48,13 +54,23 @@ fn status_reflects_the_manifest_after_a_clean() {
         .arg(&db)
         .output()
         .expect("run dq status");
-    assert!(status_output.status.success(), "stderr: {}", String::from_utf8_lossy(&status_output.stderr));
+    assert!(
+        status_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&status_output.stderr)
+    );
 
     let result: serde_json::Value = serde_json::from_slice(&status_output.stdout).unwrap();
     let items = result["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
-    assert!(items[0]["source_path"].as_str().unwrap().ends_with("node_modules"));
+    assert!(items[0]["source_path"]
+        .as_str()
+        .unwrap()
+        .ends_with("node_modules"));
     assert!(items[0]["size_bytes"].as_u64().unwrap() >= 4000);
     assert!(items[0]["restore_deadline_unix_ns"].as_i64().unwrap() > 0);
-    assert_eq!(result["total_bytes"].as_u64().unwrap(), items[0]["size_bytes"].as_u64().unwrap());
+    assert_eq!(
+        result["total_bytes"].as_u64().unwrap(),
+        items[0]["size_bytes"].as_u64().unwrap()
+    );
 }
