@@ -1,5 +1,6 @@
 //! `dq` — the Reclaim command-line interface.
 
+mod clean_command;
 mod list_command;
 mod scan_command;
 
