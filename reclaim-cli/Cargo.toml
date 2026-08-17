@@ -1,0 +1,17 @@
+[package]
+name = "reclaim-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dq"
+path = "src/main.rs"
+
+[dependencies]
+reclaim-core = { workspace = true }
+reclaim-detect = { workspace = true }
+reclaim-action = { workspace = true }
+reclaim-store = { workspace = true }
+clap = { workspace = true }

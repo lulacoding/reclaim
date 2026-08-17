@@ -1,0 +1,10 @@
+/target
+/dist
+node_modules/
+dev.db
+*.db-journal
+.claude/settings.local.json
+.DS_Store
+
+# Private/pre-launch planning docs — not for the public repo.
+/docs

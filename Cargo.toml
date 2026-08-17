@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "reclaim-core",
+    "reclaim-scan",
+    "reclaim-detect",
+    "reclaim-action",
+    "reclaim-store",
+    "reclaim-cli",
+    "reclaim-ui",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+reclaim-core = { path = "reclaim-core" }
+reclaim-scan = { path = "reclaim-scan" }
+reclaim-detect = { path = "reclaim-detect" }
+reclaim-action = { path = "reclaim-action" }
+reclaim-store = { path = "reclaim-store" }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = ">=4, <4.6", features = ["derive"] }

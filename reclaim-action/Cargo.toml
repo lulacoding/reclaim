@@ -1,0 +1,13 @@
+[package]
+name = "reclaim-action"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "reclaim_action"
+
+[dependencies]
+reclaim-core = { workspace = true }
+reclaim-store = { workspace = true }

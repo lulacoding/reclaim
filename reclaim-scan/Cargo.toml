@@ -1,0 +1,12 @@
+[package]
+name = "reclaim-scan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "reclaim_scan"
+
+[dependencies]
+reclaim-core = { workspace = true }

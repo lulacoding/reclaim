@@ -1,0 +1,14 @@
+[package]
+name = "reclaim-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "reclaim_core"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
