@@ -95,11 +95,33 @@ impl ProtectedPaths {
 
     /// Adds a single protected root.
     ///
+    /// Also protects whatever `root` currently resolves to on disk, if it
+    /// exists (`std::fs::canonicalize`) and that differs from the literal
+    /// string — the same resolution `reclaim-action::quarantine` applies to
+    /// every request's source path before checking it. Without this, a
+    /// root recorded through one valid string form of a location (e.g. an
+    /// 8.3 short name like `RUNNER~1`, which is what `%TEMP%` resolves
+    /// through on the GitHub Actions Windows runner) would silently stop
+    /// matching a candidate that gets canonicalized to a *different* valid
+    /// form of the exact same location (the long name) before the check —
+    /// a real bug this project's own CI caught. Additive only: if the path
+    /// doesn't exist yet or canonicalization fails for any reason, the
+    /// literal root above still protects it — fail safe = protect more,
+    /// never less, same principle as the OneDrive Known-Folder-Move fix.
+    ///
     /// TODO(cloud): once cloud-provider detection lands, this is where
     /// discovered OneDrive/Dropbox/Google Drive sync roots get added — the
     /// denylist itself doesn't need to change, only who calls this.
     pub fn add_root(&mut self, root: &str) {
         let components = normalize_components(root);
+
+        if let Ok(resolved) = std::fs::canonicalize(root) {
+            let resolved_components = normalize_components(&resolved.to_string_lossy());
+            if !resolved_components.is_empty() && resolved_components != components {
+                self.roots.push(resolved_components);
+            }
+        }
+
         if !components.is_empty() {
             self.roots.push(components);
         }

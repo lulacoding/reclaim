@@ -115,6 +115,42 @@ fn quarantine_refuses_a_protected_path_and_does_not_move_it() {
     assert!(!staging_root.exists() || fs::read_dir(&staging_root).unwrap().next().is_none());
 }
 
+/// Regression test for a real bug this project's own CI caught: a protected
+/// root recorded through a non-canonical path form (on CI, an 8.3 short
+/// name -- `%TEMP%` resolves through `RUNNER~1` on the GitHub Actions
+/// Windows runner) silently stopped matching once `quarantine` canonicalizes
+/// the request's source path before checking it. Reproduced portably here
+/// via a redundant `.` path component, which `canonicalize()` collapses but
+/// a purely lexical compare would not -- same class of mismatch, no 8.3
+/// short names required on the machine running this test.
+#[test]
+fn quarantine_refuses_a_protected_path_recorded_through_a_non_canonical_root_form() {
+    let base = tempfile::tempdir().unwrap();
+    let source_root = base.path().join("source");
+    let staging_root = base.path().join("staging");
+    fs::create_dir_all(&source_root).unwrap();
+
+    let item_dir = source_root.join("Documents");
+    fs::create_dir_all(&item_dir).unwrap();
+    fs::write(item_dir.join("resume.docx"), b"do not touch").unwrap();
+
+    let non_canonical_root = source_root.join(".").join("Documents");
+    let store = Store::open_in_memory().unwrap();
+    let protected = ProtectedPaths::from_roots([non_canonical_root.to_string_lossy().into_owned()]);
+
+    let err = quarantine(
+        &store,
+        &protected,
+        &staging_root,
+        30,
+        request(item_dir.clone()),
+    )
+    .expect_err("a protected path must be refused regardless of which path form recorded it");
+
+    assert!(matches!(err, Error::ProtectedPath(_)));
+    assert!(item_dir.exists(), "protected source must remain in place");
+}
+
 #[test]
 fn quarantine_refuses_a_cross_volume_move_and_does_not_move_it() {
     let Some(other) = other_volume_dir() else {
