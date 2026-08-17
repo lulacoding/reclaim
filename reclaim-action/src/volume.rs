@@ -17,7 +17,7 @@ use crate::error::Result;
 /// shorter than this.
 const VOLUME_PATH_BUFFER_LEN: usize = 4096;
 
-fn wide(path: &Path) -> Vec<u16> {
+pub(crate) fn wide(path: &Path) -> Vec<u16> {
     path.as_os_str()
         .encode_wide()
         .chain(std::iter::once(0))

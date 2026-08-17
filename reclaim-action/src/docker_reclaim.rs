@@ -15,6 +15,7 @@ use reclaim_store::Store;
 
 use crate::command_runner::{run_command_sequence, CommandRunner, CommandSpec};
 use crate::error::Result;
+use crate::free_space::FreeSpaceSource;
 use crate::ReclaimCommandResult;
 
 /// Docker's fixed command sequence: measure, then reclaim. `-f` on prune
@@ -40,12 +41,14 @@ pub fn docker_reclaim_sequence() -> &'static [CommandSpec] {
 pub fn run_docker_reclaim(
     store: &Store,
     runner: &dyn CommandRunner,
+    free_space: &dyn FreeSpaceSource,
     store_dir: &Path,
     now: SystemTime,
 ) -> Result<ReclaimCommandResult> {
     run_command_sequence(
         store,
         runner,
+        free_space,
         "docker",
         docker_reclaim_sequence(),
         store_dir,

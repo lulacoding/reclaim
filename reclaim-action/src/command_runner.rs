@@ -23,6 +23,7 @@ use reclaim_core::Tier;
 use reclaim_store::{AuditLogEntry, Store};
 
 use crate::error::{Error, Result};
+use crate::free_space::FreeSpaceSource;
 
 /// One command line to run: a program and its fixed arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +130,15 @@ pub struct ReclaimCommandResult {
     /// `true` only if every step exited 0. `false` on the first non-zero
     /// exit, at which point no further step in the sequence is run.
     pub succeeded: bool,
+    /// The real free-space delta (`GetDiskFreeSpaceExW` before the first
+    /// step vs. after the last step that ran) -- BUILD_PLAN M4 item 3.
+    /// This is genuinely **reclaimed**, unlike quarantine's
+    /// `pending_reclaim_bytes` (`reclaim-cli::clean_command`), which is
+    /// only a same-volume move that frees nothing until purge. Measured
+    /// unconditionally, success or failure: a tool exiting 0 is not
+    /// proof anything came back, so a command that "succeeds" but frees
+    /// nothing measurable reports here as ~0, never a fabricated number.
+    pub reclaimed_bytes: u64,
 }
 
 /// Runs `store_name`'s cleanup command sequence via `runner`, stopping at
@@ -144,13 +154,14 @@ pub struct ReclaimCommandResult {
 pub fn run_reclaim_command(
     store: &Store,
     runner: &dyn CommandRunner,
+    free_space: &dyn FreeSpaceSource,
     store_name: &str,
     store_dir: &Path,
     now: SystemTime,
 ) -> Result<ReclaimCommandResult> {
     let specs =
         commands_for(store_name).ok_or_else(|| Error::UnknownStore(store_name.to_string()))?;
-    run_command_sequence(store, runner, store_name, specs, store_dir, now)
+    run_command_sequence(store, runner, free_space, store_name, specs, store_dir, now)
 }
 
 /// Refuses any command whose args carry Docker's `--volumes` flag,
@@ -174,6 +185,7 @@ pub fn refuse_if_volumes_flag(spec: &CommandSpec) -> Result<()> {
 pub(crate) fn run_command_sequence(
     store: &Store,
     runner: &dyn CommandRunner,
+    free_space: &dyn FreeSpaceSource,
     store_name: &str,
     specs: &[CommandSpec],
     store_dir: &Path,
@@ -181,21 +193,33 @@ pub(crate) fn run_command_sequence(
 ) -> Result<ReclaimCommandResult> {
     let mut steps = Vec::with_capacity(specs.len());
     let mut succeeded = true;
+    let free_before = free_space.free_bytes(store_dir)?;
+    let mut reclaimed_bytes = 0u64;
 
-    for spec in specs {
+    for (i, spec) in specs.iter().enumerate() {
         refuse_if_volumes_flag(spec)?;
         let output = runner.run(spec)?;
         let step_ok = output.succeeded();
+        // The sequence's final row -- either its last step, or the step
+        // that just failed and ends it -- is the only point at which the
+        // whole sequence's real freed-space delta is known, so only it
+        // carries the measured total; earlier rows stay 0 (not yet
+        // measured, not "nothing freed").
+        let is_final_row = !step_ok || i == specs.len() - 1;
+        let size_bytes = if is_final_row {
+            let free_after = free_space.free_bytes(store_dir)?;
+            reclaimed_bytes = free_after.saturating_sub(free_before);
+            reclaimed_bytes
+        } else {
+            0
+        };
 
         store.record_audit(AuditLogEntry {
             ts: now,
             action: "native_command",
             source_path: store_dir,
             quarantine_path: None,
-            // Actual reclaimed size delta is BUILD_PLAN M4 item 3 (re-measure
-            // free space), not yet wired here -- 0 means "not measured",
-            // never a claim that nothing was reclaimed.
-            size_bytes: 0,
+            size_bytes,
             tier: Tier::ProbablySafe,
             decided_by: "user",
             reclaim_method: reclaim_core::ReclaimMethod::Command(vec![output.command_line.clone()]),
@@ -215,5 +239,6 @@ pub(crate) fn run_command_sequence(
         store_name: store_name.to_string(),
         steps,
         succeeded,
+        reclaimed_bytes,
     })
 }

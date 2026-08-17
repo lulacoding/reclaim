@@ -13,7 +13,7 @@ use std::time::SystemTime;
 
 use reclaim_action::{
     docker_reclaim_sequence, refuse_if_volumes_flag, run_docker_reclaim, CommandRunner,
-    CommandSpec, StepOutput,
+    CommandSpec, StepOutput, SystemFreeSpace,
 };
 use reclaim_store::Store;
 
@@ -123,6 +123,7 @@ fn run_docker_reclaim_measures_then_prunes_and_journals_both_steps() {
     let result = run_docker_reclaim(
         &store,
         &runner,
+        &SystemFreeSpace,
         Path::new("C:\\ProgramData\\Docker"),
         SystemTime::now(),
     )
@@ -157,6 +158,7 @@ fn run_docker_reclaim_stops_if_the_measure_step_fails() {
     let result = run_docker_reclaim(
         &store,
         &runner,
+        &SystemFreeSpace,
         Path::new("C:\\ProgramData\\Docker"),
         SystemTime::now(),
     )
