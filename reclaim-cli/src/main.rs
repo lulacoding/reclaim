@@ -4,6 +4,7 @@ mod clean_command;
 mod list_command;
 mod restore_command;
 mod scan_command;
+mod status_command;
 mod store_util;
 
 use std::path::PathBuf;
@@ -91,6 +92,15 @@ enum Command {
         #[arg(long)]
         db: Option<PathBuf>,
     },
+    /// Quarantine contents, sizes, and purge deadlines. Read-only.
+    Status {
+        /// Print the result as JSON instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+        /// State database path. Defaults to `%LOCALAPPDATA%\Reclaim\reclaim.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -163,6 +173,10 @@ fn main() {
                 }
             };
             restore_command::run(target, &db, json);
+        }
+        Command::Status { json, db } => {
+            let db = db.unwrap_or_else(scan_command::default_db_path);
+            status_command::run(&db, json);
         }
     }
 }
