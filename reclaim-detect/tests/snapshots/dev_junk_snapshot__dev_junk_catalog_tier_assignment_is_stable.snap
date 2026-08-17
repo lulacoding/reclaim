@@ -1,0 +1,25 @@
+---
+source: reclaim-detect/tests/dev_junk_snapshot.rs
+expression: "report.join(\"\\n\")"
+---
+C:\Users\sam\dev\dotnetapp\MyApp.csproj => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\dev\dotnetapp\bin => tier=Safe rule=Some("DEV-007") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\dotnetapp\obj => tier=Safe rule=Some("DEV-007") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\javaapp\.gradle => tier=Safe rule=Some("DEV-006") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\javaapp\build.gradle.kts => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\dev\pyapp\.mypy_cache => tier=Safe rule=Some("DEV-005") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\pyapp\.pytest_cache => tier=Safe rule=Some("DEV-005") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\pyapp\__pycache__ => tier=Safe rule=Some("DEV-005") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\pyapp\requirements.txt => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\dev\rustapp\Cargo.toml => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\dev\rustapp\src => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\dev\rustapp\target => tier=Safe rule=Some("DEV-002") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\scripts\bin => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\dev\webapp\.next => tier=Safe rule=Some("DEV-004") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\webapp\.turbo => tier=Safe rule=Some("DEV-004") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\webapp\dist => tier=Safe rule=Some("DEV-003") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\webapp\node_modules => tier=Safe rule=Some("DEV-001") method=Some(Move) rebuild_cost=Some(Cheap)
+C:\Users\sam\dev\webapp\package.json => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Users\sam\global-gradle\.gradle => tier=Unknown rule=None method=None rebuild_cost=None
+C:\Windows\System32\backup\Cargo.toml => tier=NeverTouch rule=None method=None rebuild_cost=None
+C:\Windows\System32\backup\target => tier=NeverTouch rule=None method=None rebuild_cost=None

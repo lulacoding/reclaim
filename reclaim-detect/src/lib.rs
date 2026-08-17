@@ -7,6 +7,8 @@
 
 use reclaim_core::{ProtectedPaths, RebuildCost, ReclaimMethod, ScanEntry, Tier};
 
+pub mod dev_junk;
+
 /// The result of classifying one [`ScanEntry`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Detection {
@@ -31,25 +33,37 @@ pub trait Rule {
     /// Stable rule ID (e.g. `"DEV-002"`), recorded as `audit_log.decided_by`.
     fn id(&self) -> &'static str;
 
-    /// Returns `Some` if this rule recognizes `entry`.
-    fn matches(&self, entry: &ScanEntry) -> Option<RuleMatch>;
+    /// Returns `Some` if this rule recognizes `entry`. `siblings` are the
+    /// other entries in `entry`'s parent directory (as produced by one
+    /// `reclaim_scan::DirectoryScanned` batch) — needed by rules that gate
+    /// on a project marker file (e.g. DEV-002's `Cargo.toml` check).
+    fn matches(&self, entry: &ScanEntry, siblings: &[ScanEntry]) -> Option<RuleMatch>;
 }
 
-/// Classifies a scan entry.
+/// Classifies a scan entry against the built-in rule catalog.
 ///
 /// The protected-path denylist is checked **first, before any rule
 /// runs** and is not overridable by anything below it — see ADR-004.
 /// Anything matching no rule is [`Tier::Unknown`] (never pre-selected).
-pub fn classify(entry: &ScanEntry, protected: &ProtectedPaths) -> Detection {
-    classify_with_rules(entry, protected, &[])
+///
+/// `siblings` are the other entries in `entry`'s parent directory — see
+/// [`Rule::matches`].
+pub fn classify(
+    entry: &ScanEntry,
+    siblings: &[ScanEntry],
+    protected: &ProtectedPaths,
+) -> Detection {
+    let owned_rules = dev_junk::dev_junk_rules();
+    let rules: Vec<&dyn Rule> = owned_rules.iter().map(|r| r as &dyn Rule).collect();
+    classify_with_rules(entry, siblings, protected, &rules)
 }
 
-/// `classify`, taking an explicit rule catalog. Kept internal for now:
-/// there is no real rule catalog yet, so [`classify`] always calls this
-/// with an empty slice. Exists as its own function so tests can inject
-/// rules to prove the protected-path veto (below) cannot be overridden.
+/// `classify`, taking an explicit rule catalog. Exists as its own
+/// function so tests can inject rules to prove the protected-path veto
+/// (below) cannot be overridden.
 fn classify_with_rules(
     entry: &ScanEntry,
+    siblings: &[ScanEntry],
     protected: &ProtectedPaths,
     rules: &[&dyn Rule],
 ) -> Detection {
@@ -64,7 +78,7 @@ fn classify_with_rules(
     }
 
     for rule in rules {
-        if let Some(rule_match) = rule.matches(entry) {
+        if let Some(rule_match) = rule.matches(entry, siblings) {
             return Detection {
                 tier: rule_match.tier,
                 method: Some(rule_match.method),
@@ -106,7 +120,7 @@ mod tests {
         let protected = ProtectedPaths::default();
         let entry = entry_at("C:\\Users\\sam\\projects\\some-random-folder");
 
-        let detection = classify(&entry, &protected);
+        let detection = classify(&entry, &[], &protected);
 
         assert_eq!(detection.tier, Tier::Unknown);
     }
@@ -121,7 +135,7 @@ mod tests {
             "TEST-ALWAYS-SAFE"
         }
 
-        fn matches(&self, _entry: &ScanEntry) -> Option<RuleMatch> {
+        fn matches(&self, _entry: &ScanEntry, _siblings: &[ScanEntry]) -> Option<RuleMatch> {
             Some(RuleMatch {
                 tier: Tier::Safe,
                 method: ReclaimMethod::Move,
@@ -137,7 +151,7 @@ mod tests {
         let entry = entry_at("C:\\Windows\\System32\\some-dir");
         let rules: [&dyn Rule; 1] = [&AlwaysSafeRule];
 
-        let detection = classify_with_rules(&entry, &protected, &rules);
+        let detection = classify_with_rules(&entry, &[], &protected, &rules);
 
         assert_eq!(detection.tier, Tier::NeverTouch);
     }
@@ -150,7 +164,7 @@ mod tests {
         let entry = entry_at("C:\\Users\\sam\\projects\\some-random-folder");
         let rules: [&dyn Rule; 1] = [&AlwaysSafeRule];
 
-        let detection = classify_with_rules(&entry, &protected, &rules);
+        let detection = classify_with_rules(&entry, &[], &protected, &rules);
 
         assert_eq!(detection.tier, Tier::Safe);
     }
