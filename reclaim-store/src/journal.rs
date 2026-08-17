@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 
 use reclaim_core::{ReclaimMethod, Tier};
 use rusqlite::params;
+use rusqlite::OptionalExtension;
 
 use crate::error::Result;
 use crate::store::{from_unix_nanos, to_unix_nanos, Store};
@@ -68,6 +69,8 @@ pub struct QuarantinedItem {
     pub size_bytes: u64,
     pub tier: Tier,
     pub reclaim_method: ReclaimMethod,
+    /// When this item's grace period ends — `dq status`'s purge deadline.
+    pub restore_deadline: SystemTime,
 }
 
 impl Store {
@@ -218,7 +221,7 @@ impl Store {
     /// when asked to restore that one operation.
     pub fn quarantined_items(&self, op_id: OperationId) -> Result<Vec<QuarantinedItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method, restore_deadline_unix_ns
              FROM quarantine_items WHERE op_id = ?1 AND status = 'quarantined'",
         )?;
         let rows = stmt.query_map(params![op_id.0], row_to_quarantined_item)?;
@@ -230,7 +233,7 @@ impl Store {
     /// restore-all restores.
     pub fn all_quarantined_items(&self) -> Result<Vec<QuarantinedItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method, restore_deadline_unix_ns
              FROM quarantine_items WHERE status = 'quarantined'",
         )?;
         let rows = stmt.query_map([], row_to_quarantined_item)?;
@@ -279,6 +282,23 @@ impl Store {
         )?;
         Ok(())
     }
+
+    /// The most recently completed quarantine operation's id, or `None` if
+    /// none exists yet — what `dq restore --last` resolves to. Restore
+    /// operations (`kind = 'restore'`) are never returned; "last" means the
+    /// last *quarantine*.
+    pub fn last_quarantine_op_id(&self) -> Result<Option<OperationId>> {
+        self.conn
+            .query_row(
+                "SELECT op_id FROM operations WHERE kind = 'quarantine' AND status = 'complete'
+                 ORDER BY op_id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(|maybe| maybe.map(OperationId))
+            .map_err(Into::into)
+    }
 }
 
 fn row_to_quarantined_item(row: &rusqlite::Row) -> rusqlite::Result<QuarantinedItem> {
@@ -294,6 +314,7 @@ fn row_to_quarantined_item(row: &rusqlite::Row) -> rusqlite::Result<QuarantinedI
         reclaim_method: serde_json::from_str(&row.get::<_, String>(6)?).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
         })?,
+        restore_deadline: from_unix_nanos(row.get(7)?),
     })
 }
 

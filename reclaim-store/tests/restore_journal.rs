@@ -78,6 +78,51 @@ fn begin_restore_journals_a_pending_restore_operation() {
 }
 
 #[test]
+fn quarantined_items_carries_the_restore_deadline() {
+    let store = Store::open_in_memory().unwrap();
+    let op_id = store
+        .begin_operation("quarantine", &[item("target")])
+        .unwrap();
+    let before = std::time::SystemTime::now();
+    store.complete_operation(op_id, 30).unwrap();
+
+    let items = store.quarantined_items(op_id).unwrap();
+    assert_eq!(items.len(), 1);
+    let expected_earliest = before + std::time::Duration::from_secs(29 * 86_400);
+    assert!(
+        items[0].restore_deadline > expected_earliest,
+        "restore_deadline should be ~30 days out"
+    );
+}
+
+#[test]
+fn last_quarantine_op_id_is_none_with_no_completed_quarantine_operations() {
+    let store = Store::open_in_memory().unwrap();
+    assert_eq!(store.last_quarantine_op_id().unwrap(), None);
+}
+
+#[test]
+fn last_quarantine_op_id_returns_the_most_recently_completed_one() {
+    let store = Store::open_in_memory().unwrap();
+    let op1 = store.begin_operation("quarantine", &[item("a")]).unwrap();
+    store.complete_operation(op1, 30).unwrap();
+    let op2 = store.begin_operation("quarantine", &[item("b")]).unwrap();
+    store.complete_operation(op2, 30).unwrap();
+
+    assert_eq!(store.last_quarantine_op_id().unwrap(), Some(op2));
+}
+
+#[test]
+fn last_quarantine_op_id_ignores_still_pending_operations() {
+    let store = Store::open_in_memory().unwrap();
+    let op1 = store.begin_operation("quarantine", &[item("a")]).unwrap();
+    store.complete_operation(op1, 30).unwrap();
+    let _op2 = store.begin_operation("quarantine", &[item("b")]).unwrap(); // left pending
+
+    assert_eq!(store.last_quarantine_op_id().unwrap(), Some(op1));
+}
+
+#[test]
 fn complete_restore_item_marks_it_restored_and_removes_it_from_quarantined_items() {
     let store = Store::open_in_memory().unwrap();
     let op_id = store
