@@ -153,7 +153,7 @@ impl Rule for DevJunkRule {
 
         recognized.then(|| RuleMatch {
             tier: self.spec.tier,
-            method: self.spec.method,
+            method: self.spec.method.clone(),
             rebuild_cost: self.spec.rebuild_cost,
             explanation: self.spec.explanation.to_string(),
         })

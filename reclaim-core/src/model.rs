@@ -17,13 +17,16 @@ pub enum Tier {
 }
 
 /// How a reclaim is carried out for a given item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReclaimMethod {
     /// Same-volume quarantine move.
     Move,
-    /// Invoke the owning tool's own cleanup command (npm, cargo, docker, …).
-    Command,
+    /// Invoke the owning tool's own cleanup command(s) (npm, cargo,
+    /// docker, …), run in order — only once the tool is confirmed
+    /// present (ADR-009). The commands are recorded here so the
+    /// resulting classification is self-describing and auditable.
+    Command(Vec<String>),
 }
 
 /// How expensive it is to regenerate an item after it's reclaimed.
@@ -70,14 +73,32 @@ mod tests {
     }
 
     #[test]
-    fn reclaim_method_serializes_kebab_case() {
+    fn reclaim_method_move_serializes_kebab_case() {
         assert_eq!(
             toml::Value::try_from(ReclaimMethod::Move).unwrap(),
             toml::Value::String("move".into())
         );
+    }
+
+    #[test]
+    fn reclaim_method_command_serializes_with_its_command_sequence() {
+        let method = ReclaimMethod::Command(vec![
+            "npm cache verify".to_string(),
+            "npm cache clean --force".to_string(),
+        ]);
+
+        let mut expected = toml::value::Table::new();
+        expected.insert(
+            "command".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("npm cache verify".into()),
+                toml::Value::String("npm cache clean --force".into()),
+            ]),
+        );
+
         assert_eq!(
-            toml::Value::try_from(ReclaimMethod::Command).unwrap(),
-            toml::Value::String("command".into())
+            toml::Value::try_from(method).unwrap(),
+            toml::Value::Table(expected)
         );
     }
 

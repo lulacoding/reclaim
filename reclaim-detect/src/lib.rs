@@ -8,6 +8,7 @@
 use reclaim_core::{ProtectedPaths, RebuildCost, ReclaimMethod, ScanEntry, Tier};
 
 pub mod dev_junk;
+pub mod store_cache;
 
 /// The result of classifying one [`ScanEntry`].
 #[derive(Debug, Clone, PartialEq, Eq)]
