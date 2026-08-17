@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::Result;
+use crate::migrations;
 
 /// Row id of a `scans` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +29,7 @@ pub struct ScanRecord {
 
 /// The Reclaim SQLite store.
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 impl Store {
@@ -51,21 +52,7 @@ impl Store {
     }
 
     fn from_connection(conn: Connection) -> Result<Self> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS scans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                root TEXT NOT NULL,
-                started_at_unix_ns INTEGER NOT NULL,
-                finished_at_unix_ns INTEGER NOT NULL,
-                total_logical INTEGER NOT NULL,
-                total_on_disk INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS directory_mtimes (
-                path TEXT PRIMARY KEY,
-                mtime_unix_ns INTEGER NOT NULL,
-                scan_id INTEGER NOT NULL REFERENCES scans(id)
-            );",
-        )?;
+        migrations::migrate(&conn)?;
         Ok(Self { conn })
     }
 
@@ -171,14 +158,14 @@ impl Store {
     }
 }
 
-fn to_unix_nanos(t: SystemTime) -> i64 {
+pub(crate) fn to_unix_nanos(t: SystemTime) -> i64 {
     match t.duration_since(SystemTime::UNIX_EPOCH) {
         Ok(d) => d.as_nanos() as i64,
         Err(e) => -(e.duration().as_nanos() as i64),
     }
 }
 
-fn from_unix_nanos(nanos: i64) -> SystemTime {
+pub(crate) fn from_unix_nanos(nanos: i64) -> SystemTime {
     if nanos >= 0 {
         SystemTime::UNIX_EPOCH + Duration::from_nanos(nanos as u64)
     } else {

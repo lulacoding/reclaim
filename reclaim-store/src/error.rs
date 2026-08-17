@@ -8,6 +8,9 @@ pub enum Error {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 /// Convenience alias for `Result<T, Error>`.

@@ -459,6 +459,8 @@ version = "0.0.0"
 dependencies = [
  "reclaim-core",
  "rusqlite",
+ "serde_json",
+ "tempfile",
  "thiserror",
 ]
 
