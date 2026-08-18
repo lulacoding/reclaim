@@ -1,48 +1,44 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import TitleBar from "./components/TitleBar";
+import Sidebar, { type NavView } from "./components/Sidebar";
 import "./App.css";
 
-// Scaffold-stage verification only (BUILD_PLAN M5 item 2): calls the
-// `scan` IPC command and renders the raw ScanSummary JSON. The real scan
-// view (treemap + tiered list) is M5 item 3.
-function App() {
-  const [path, setPath] = useState("");
-  const [result, setResult] = useState<string>("");
-  const [error, setError] = useState<string>("");
+const VIEW_COPY: Record<NavView, { title: string; body: string }> = {
+  scan: {
+    title: "Scan & clean",
+    body: "The disk-usage treemap and tiered candidate list land here next.",
+  },
+  review: {
+    title: "Review",
+    body: "Selected items will be reviewed here before moving to quarantine.",
+  },
+  quarantine: {
+    title: "Quarantine",
+    body: "Quarantined items, their purge deadlines, and restore controls land here.",
+  },
+  settings: {
+    title: "Settings",
+    body: "Protected paths, grace period, and other preferences land here.",
+  },
+};
 
-  async function runScan() {
-    setError("");
-    setResult("");
-    try {
-      const summary = await invoke("scan", { path: path || null });
-      setResult(JSON.stringify(summary, null, 2));
-    } catch (err) {
-      setError(String(err));
-    }
-  }
+function App() {
+  const [view, setView] = useState<NavView>("scan");
+  const copy = VIEW_COPY[view];
 
   return (
-    <main className="container">
-      <h1>Reclaim</h1>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          runScan();
-        }}
-      >
-        <input
-          id="scan-path-input"
-          onChange={(e) => setPath(e.currentTarget.value)}
-          placeholder="Path to scan (defaults to .)"
-        />
-        <button type="submit">Scan</button>
-      </form>
-
-      {error && <pre style={{ color: "red" }}>{error}</pre>}
-      {result && <pre>{result}</pre>}
-    </main>
+    <div className="app-shell">
+      <TitleBar />
+      <div className="app-body">
+        <Sidebar active={view} onNavigate={setView} />
+        <main className="app-content">
+          <div className="app-content-placeholder">
+            <h2>{copy.title}</h2>
+            <p>{copy.body}</p>
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
 
