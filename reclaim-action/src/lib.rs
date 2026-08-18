@@ -23,4 +23,4 @@ pub use free_space::{free_bytes, FreeSpaceSource, SystemFreeSpace};
 pub use quarantine::{quarantine, QuarantineRequest};
 pub use recovery::{recover, RecoveredItem, RecoveredLocation};
 pub use restore::{restore, restore_all, RestoredItem};
-pub use tool_detection::{detect_tool, ToolPresence};
+pub use tool_detection::{command_on_path, detect_tool, resolve_store_dir, ToolPresence};

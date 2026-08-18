@@ -165,9 +165,10 @@ fn yes_quarantines_and_reports_pending_reclaim_not_reclaimed() {
             .unwrap()
             >= 3000
     );
-    assert!(
-        result["execution"].get("reclaimed_bytes").is_none(),
-        "must never claim bytes are already reclaimed"
+    assert_eq!(
+        result["execution"]["reclaimed_bytes"].as_u64().unwrap(),
+        0,
+        "must never claim bytes are already reclaimed when no --stores were requested"
     );
     assert!(result["execution"]["failures"]
         .as_array()

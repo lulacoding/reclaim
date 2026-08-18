@@ -2,6 +2,7 @@
 
 mod clean_command;
 mod list_command;
+mod managed_store;
 mod restore_command;
 mod scan_command;
 mod status_command;
@@ -56,6 +57,14 @@ enum Command {
         /// Only clean candidates in this tier.
         #[arg(long)]
         tier: Option<TierArg>,
+        /// Opt in to managed-store items (npm/yarn/pnpm/pip/cargo/gradle/
+        /// nuget/go/docker) -- ProbablySafe and Expensive, so never
+        /// pre-selected. Pass `all` or a comma-separated list of store
+        /// names (e.g. `npm,cargo`). A detected store's own cleanup
+        /// command runs instead of a move; an absent one falls back to a
+        /// quarantine move of its cache directory.
+        #[arg(long)]
+        stores: Option<String>,
         /// Show the plan; mutate nothing.
         #[arg(long)]
         dry_run: bool,
@@ -137,6 +146,7 @@ fn main() {
         Command::Clean {
             path,
             tier,
+            stores,
             dry_run,
             yes,
             json,
@@ -154,6 +164,7 @@ fn main() {
             clean_command::run(
                 &root,
                 tier.map(Into::into),
+                stores.as_deref().map(managed_store::parse_stores_arg),
                 dry_run,
                 yes,
                 json,

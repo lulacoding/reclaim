@@ -57,17 +57,36 @@ pub fn detect_tool(
 /// Resolves `tool`'s store-directory candidate (if it declares one) from
 /// its environment variable, then probes it alongside the PATH lookup.
 fn probe(tool: &ToolDef) -> ToolPresence {
-    let store_dir = tool.store_dir.and_then(|(env_var, subdir)| {
-        std::env::var(env_var)
-            .ok()
-            .map(|base| PathBuf::from(base).join(subdir))
-    });
+    let store_dir = resolve_store_dir(tool);
     let (present, path) = probe_at(Some(tool.command_name), store_dir.as_deref());
     ToolPresence {
         tool: tool.name.to_string(),
         present,
         path,
     }
+}
+
+/// Resolves `tool`'s candidate store directory -- its declared environment
+/// variable joined with its declared subpath -- without checking whether
+/// it exists. `None` for tools with no declared directory (Docker) or an
+/// unset environment variable.
+pub fn resolve_store_dir(tool: &ToolDef) -> Option<PathBuf> {
+    let (env_var, subdir) = tool.store_dir?;
+    std::env::var(env_var)
+        .ok()
+        .map(|base| PathBuf::from(base).join(subdir))
+}
+
+/// Whether `command_name` resolves on PATH right now. Decoupled from
+/// [`detect_tool`]'s cached `present` flag, which deliberately ORs a PATH
+/// hit with the store directory merely existing (BUILD_PLAN M4 item 1) --
+/// that conflates "this tool's cache has data" with "the tool itself is
+/// runnable right now". The clean flow (BUILD_PLAN M4 item 5) needs the
+/// second question specifically, to decide between running the tool's own
+/// command and falling back to a quarantine move of a cache directory left
+/// behind by a since-uninstalled tool.
+pub fn command_on_path(command_name: &str) -> bool {
+    find_on_path(command_name).is_some()
 }
 
 /// The actual presence check, decoupled from the catalog and environment
