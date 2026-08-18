@@ -1,0 +1,136 @@
+.review-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.review-loading,
+.review-empty {
+  font-size: 13.5px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.review-error {
+  font-size: 12.5px;
+  color: var(--tier-probsafe-text);
+}
+
+.review-reassurance {
+  flex: none;
+  margin: var(--space-3) 0 var(--space-5);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent-100);
+  font-size: 13px;
+}
+
+.review-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.review-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 9px var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.review-row:last-child {
+  border-bottom: none;
+}
+
+.review-row-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--color-text) 85%, transparent);
+}
+
+.review-row-method {
+  flex: none;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.review-row-size {
+  flex: none;
+  min-width: 64px;
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent);
+}
+
+.review-totals {
+  flex: none;
+  display: flex;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.review-totals-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.review-totals-label {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.review-totals-item strong {
+  font-size: 15px;
+}
+
+.review-actions {
+  flex: none;
+  margin-top: var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.review-confirm-armed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.review-done-summary {
+  font-size: 13.5px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+  margin-bottom: var(--space-5);
+}
+
+.review-failures {
+  margin-bottom: var(--space-5);
+}
+
+.review-failures h3 {
+  font-size: 13px;
+  color: var(--tier-probsafe-text);
+}
+
+.review-failures ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}

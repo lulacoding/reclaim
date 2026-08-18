@@ -94,8 +94,16 @@ fn is_selectable(candidate: &Candidate) -> bool {
     selectable_tier && matches!(candidate.method, Some(ReclaimMethod::Move))
 }
 
-/// Identical selection rule to `reclaim_cli::clean_command::build_plan`.
-fn build_plan(root: &std::path::Path, tier_filter: Option<Tier>) -> CleanPlan {
+/// Identical selection rule to `reclaim_cli::clean_command::build_plan`,
+/// plus an optional `paths_filter` (UI-only: lets the frontend narrow the
+/// plan to a checkbox selection). `paths_filter` only ever *narrows* --
+/// it's applied after `is_selectable`/`tier_filter`, so a path that isn't
+/// structurally selectable can never be smuggled in by naming it here.
+fn build_plan(
+    root: &std::path::Path,
+    tier_filter: Option<Tier>,
+    paths_filter: Option<&std::collections::HashSet<PathBuf>>,
+) -> CleanPlan {
     let report = list::collect(root);
     let candidates = report
         .safe
@@ -107,6 +115,7 @@ fn build_plan(root: &std::path::Path, tier_filter: Option<Tier>) -> CleanPlan {
     let items: Vec<CleanItem> = candidates
         .filter(is_selectable)
         .filter(|c| tier_filter.is_none_or(|t| c.tier == t))
+        .filter(|c| paths_filter.is_none_or(|set| set.contains(&c.path)))
         .map(|c| CleanItem {
             path: c.path,
             logical_size: c.logical_size,
@@ -126,19 +135,28 @@ fn build_plan(root: &std::path::Path, tier_filter: Option<Tier>) -> CleanPlan {
     }
 }
 
+fn parse_paths(paths: Option<Vec<String>>) -> Option<std::collections::HashSet<PathBuf>> {
+    paths.map(|p| p.into_iter().map(PathBuf::from).collect())
+}
+
 #[tauri::command]
-pub fn clean_dry_run(path: Option<String>, tier: Option<String>) -> Result<CleanPlan, String> {
+pub fn clean_dry_run(
+    path: Option<String>,
+    tier: Option<String>,
+    paths: Option<Vec<String>>,
+) -> Result<CleanPlan, String> {
     let root = path
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     let tier_filter = crate::tier::parse_tier(tier.as_deref())?;
-    Ok(build_plan(&root, tier_filter))
+    Ok(build_plan(&root, tier_filter, parse_paths(paths).as_ref()))
 }
 
 #[tauri::command]
 pub fn clean(
     path: Option<String>,
     tier: Option<String>,
+    paths: Option<Vec<String>>,
     db: Option<String>,
     quarantine_dir: Option<String>,
     grace_period_days: Option<u32>,
@@ -157,7 +175,7 @@ pub fn clean(
         .unwrap_or(reclaim_core::MIN_GRACE_PERIOD_DAYS)
         .max(reclaim_core::MIN_GRACE_PERIOD_DAYS);
 
-    let plan = build_plan(&root, tier_filter);
+    let plan = build_plan(&root, tier_filter, parse_paths(paths).as_ref());
     let store = reclaim_store::Store::open(&db).map_err(|e| e.to_string())?;
     let protected = ProtectedPaths::windows_defaults();
 
@@ -197,4 +215,125 @@ pub fn clean(
         reclaimed_bytes: 0,
         failures,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    //! `paths` filter coverage, run against real temp-dir fixtures (never
+    //! real user directories -- CLAUDE.md golden rules). Every test gets
+    //! its own isolated fixture + db + quarantine dir, all under the
+    //! workspace's own `target/` so quarantine's same-volume-move
+    //! invariant holds and nothing is a protected path.
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn workspace_target_dir() -> PathBuf {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target");
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    struct TestEnv {
+        fixture: tempfile::TempDir,
+        db: PathBuf,
+        quarantine_dir: PathBuf,
+        _isolation: tempfile::TempDir,
+    }
+
+    /// Two independently-Safe `node_modules` dirs (`pkg-a`, `pkg-b`) plus
+    /// one Unknown dir, so tests can prove the paths filter both narrows
+    /// among selectable items and can't be used to smuggle in one that
+    /// isn't.
+    fn setup() -> TestEnv {
+        let isolation = tempfile::Builder::new()
+            .prefix("reclaim-ui-clean-env-")
+            .tempdir_in(workspace_target_dir())
+            .unwrap();
+        let fixture = tempfile::Builder::new()
+            .prefix("reclaim-ui-clean-fixture-")
+            .tempdir_in(workspace_target_dir())
+            .unwrap();
+
+        for pkg in ["pkg-a", "pkg-b"] {
+            let node_modules = fixture.path().join(pkg).join("node_modules");
+            fs::create_dir_all(&node_modules).unwrap();
+            fs::write(node_modules.join("index.js"), vec![1u8; 3000]).unwrap();
+        }
+        let unrecognized = fixture.path().join("some-unrecognized-folder");
+        fs::create_dir_all(&unrecognized).unwrap();
+        fs::write(unrecognized.join("notes.txt"), vec![2u8; 100]).unwrap();
+
+        TestEnv {
+            db: isolation.path().join("reclaim.db"),
+            quarantine_dir: isolation.path().join("quarantine"),
+            fixture,
+            _isolation: isolation,
+        }
+    }
+
+    #[test]
+    fn paths_none_selects_every_eligible_item_unchanged() {
+        let env = setup();
+        let plan = build_plan(env.fixture.path(), None, None);
+        assert_eq!(
+            plan.items.len(),
+            2,
+            "both node_modules dirs are Safe and should be planned: {:?}",
+            plan.items
+        );
+    }
+
+    #[test]
+    fn paths_filter_narrows_to_the_selected_item() {
+        let env = setup();
+        let pkg_a = env.fixture.path().join("pkg-a").join("node_modules");
+        let selected: std::collections::HashSet<PathBuf> = [pkg_a.clone()].into_iter().collect();
+
+        let plan = build_plan(env.fixture.path(), None, Some(&selected));
+
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].path, pkg_a);
+    }
+
+    #[test]
+    fn paths_filter_cannot_smuggle_in_an_unselectable_path() {
+        let env = setup();
+        let unrecognized = env.fixture.path().join("some-unrecognized-folder");
+        let selected: std::collections::HashSet<PathBuf> = [unrecognized].into_iter().collect();
+
+        let plan = build_plan(env.fixture.path(), None, Some(&selected));
+
+        assert!(
+            plan.items.is_empty(),
+            "an Unknown-tier path passed via paths_filter must never be planned: {:?}",
+            plan.items
+        );
+    }
+
+    #[test]
+    fn clean_with_paths_quarantines_only_the_selected_item() {
+        let env = setup();
+        let pkg_a = env.fixture.path().join("pkg-a").join("node_modules");
+        let pkg_b = env.fixture.path().join("pkg-b").join("node_modules");
+
+        let result = clean(
+            Some(env.fixture.path().to_string_lossy().into_owned()),
+            None,
+            Some(vec![pkg_a.to_string_lossy().into_owned()]),
+            Some(env.db.to_string_lossy().into_owned()),
+            Some(env.quarantine_dir.to_string_lossy().into_owned()),
+            None,
+        )
+        .expect("clean should succeed");
+
+        assert_eq!(result.quarantined.len(), 1);
+        assert_eq!(result.quarantined[0].path, pkg_a);
+        assert!(!pkg_a.exists(), "the selected item should have moved");
+        assert!(pkg_b.exists(), "the unselected item must be left untouched");
+    }
 }

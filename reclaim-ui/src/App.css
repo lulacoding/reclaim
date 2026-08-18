@@ -31,3 +31,78 @@
   color: color-mix(in srgb, var(--color-text) 55%, transparent);
   max-width: 60ch;
 }
+
+/* Shared control styles, used by ScanView and ReviewView. */
+
+.btn {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.btn-primary {
+  background: var(--color-accent-600);
+  color: var(--color-accent-100);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: var(--color-accent-500);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+  border: 1px solid var(--color-divider);
+}
+
+.btn-ghost:not(:disabled):hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.btn-danger {
+  background: var(--tier-probsafe);
+  color: var(--color-bg);
+}
+
+.btn-danger:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.tier-badge {
+  font-size: 10.5px;
+  font-weight: 500;
+  border-radius: 20px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.tier-badge-safe {
+  background: var(--tier-safe-bg);
+  color: var(--tier-safe-text);
+}
+
+.tier-badge-probably-safe {
+  background: var(--tier-probsafe-bg);
+  color: var(--tier-probsafe-text);
+}
+
+.tier-badge-unknown {
+  background: var(--tier-unknown-bg);
+  color: var(--tier-unknown-text);
+}
+
+.tier-badge-never-touch {
+  background: var(--tier-never-bg);
+  color: var(--tier-never-text);
+}

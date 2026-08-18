@@ -1,0 +1,118 @@
+.scan-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.scan-header {
+  flex: none;
+  margin-bottom: var(--space-6);
+}
+
+.scan-controls {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.scan-path-input {
+  flex: 1;
+  font-family: var(--font-body);
+  font-size: 13px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  padding: 9px 12px;
+}
+
+.scan-path-input:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.scan-error {
+  margin: var(--space-3) 0 0;
+  font-size: 12.5px;
+  color: var(--tier-probsafe-text);
+}
+
+.scan-empty {
+  font-size: 13.5px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.scan-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 9px var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  cursor: pointer;
+}
+
+.scan-row:last-child {
+  border-bottom: none;
+}
+
+.scan-row:hover {
+  background: color-mix(in srgb, var(--color-text) 4%, transparent);
+}
+
+.scan-row-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.scan-row-disabled:hover {
+  background: transparent;
+}
+
+.scan-row input[type="checkbox"] {
+  flex: none;
+  accent-color: var(--color-accent);
+}
+
+.scan-row-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--color-text) 85%, transparent);
+}
+
+.scan-row-size {
+  flex: none;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent);
+}
+
+.scan-footer {
+  flex: none;
+  margin-top: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.scan-footer-total {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+}
+
+.scan-footer-total strong {
+  color: var(--color-text);
+}

@@ -29,3 +29,6 @@ reclaim-detect = { workspace = true }
 reclaim-action = { workspace = true }
 reclaim-store = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+

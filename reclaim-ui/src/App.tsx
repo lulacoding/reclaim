@@ -1,17 +1,14 @@
 import { useState } from "react";
 import TitleBar from "./components/TitleBar";
 import Sidebar, { type NavView } from "./components/Sidebar";
+import ScanView from "./components/ScanView";
+import ReviewView from "./components/ReviewView";
+import type { Candidate } from "./api/types";
 import "./App.css";
 
-const VIEW_COPY: Record<NavView, { title: string; body: string }> = {
-  scan: {
-    title: "Scan & clean",
-    body: "The disk-usage treemap and tiered candidate list land here next.",
-  },
-  review: {
-    title: "Review",
-    body: "Selected items will be reviewed here before moving to quarantine.",
-  },
+type PlaceholderView = Exclude<NavView, "scan" | "review">;
+
+const VIEW_COPY: Record<PlaceholderView, { title: string; body: string }> = {
   quarantine: {
     title: "Quarantine",
     body: "Quarantined items, their purge deadlines, and restore controls land here.",
@@ -24,7 +21,26 @@ const VIEW_COPY: Record<NavView, { title: string; body: string }> = {
 
 function App() {
   const [view, setView] = useState<NavView>("scan");
-  const copy = VIEW_COPY[view];
+  const [root, setRoot] = useState("");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const toggleSelected = (path: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const finishReview = () => {
+    setSelected(new Set());
+    setView("scan");
+  };
 
   return (
     <div className="app-shell">
@@ -32,10 +48,31 @@ function App() {
       <div className="app-body">
         <Sidebar active={view} onNavigate={setView} />
         <main className="app-content">
-          <div className="app-content-placeholder">
-            <h2>{copy.title}</h2>
-            <p>{copy.body}</p>
-          </div>
+          {view === "scan" && (
+            <ScanView
+              root={root}
+              onRootChange={setRoot}
+              candidates={candidates}
+              onCandidates={setCandidates}
+              selected={selected}
+              onToggleSelected={toggleSelected}
+              onReview={() => setView("review")}
+            />
+          )}
+          {view === "review" && (
+            <ReviewView
+              root={root}
+              selected={selected}
+              onBack={() => setView("scan")}
+              onDone={finishReview}
+            />
+          )}
+          {view !== "scan" && view !== "review" && (
+            <div className="app-content-placeholder">
+              <h2>{VIEW_COPY[view].title}</h2>
+              <p>{VIEW_COPY[view].body}</p>
+            </div>
+          )}
         </main>
       </div>
     </div>
