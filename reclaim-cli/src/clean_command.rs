@@ -227,6 +227,16 @@ pub struct CleanExecution {
     pub failures: Vec<CleanFailure>,
 }
 
+// TODO(M6, THREAT_MODEL T5 / BUILD_PLAN M6 item 1): this is where the
+// "batch + throttle" AV/EDR hardening belongs. Each iteration below is one
+// same-volume rename (quarantine already moves a whole top-level candidate
+// directory in a single call, never per-file), so no single move
+// is a "syscall storm" -- but a large `dq clean --yes` plan fires many of
+// these renames back-to-back with no delay between them, and a rapid
+// sequence of directory-level renames across many locations is exactly the
+// shape AV/EDR ransomware heuristics key on. Not implemented here
+// deliberately (M6 scope, not M4/M5): no delay/batching exists yet between
+// iterations of either loop below.
 #[allow(clippy::too_many_arguments)]
 fn execute(
     store: &Store,
@@ -243,6 +253,7 @@ fn execute(
     let mut failures = Vec::new();
     let mut pending_reclaim_bytes = 0u64;
 
+    // Bulk move loop #1/2 -- see this function's TODO(M6) above.
     for item in &plan.items {
         let request = QuarantineRequest {
             source_path: item.path.clone(),
@@ -319,6 +330,9 @@ fn execute(
                     }),
                 }
             }
+            // Bulk move loop #2/2 (the fallback path for stores whose tool
+            // isn't runnable) -- same TODO(M6) as the scan-item loop above:
+            // no throttle between iterations yet, deliberately deferred.
             StoreAction::Move => {
                 let store_dir = item
                     .store_dir

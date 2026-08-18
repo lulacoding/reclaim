@@ -38,6 +38,15 @@ pub fn docker_reclaim_sequence() -> &'static [CommandSpec] {
 /// `audit_log` row per step actually run. `store_dir` is recorded
 /// alongside each row for consistency with every other managed store,
 /// even though Docker's own daemon -- not a directory -- owns the data.
+///
+/// **Precondition, not enforced here:** same as [`crate::run_reclaim_command`]
+/// -- this trusts the caller to have already confirmed the `docker`
+/// executable is on PATH before calling this at all. The `--volumes`
+/// refusal, by contrast, *is* enforced unconditionally, twice: once in the
+/// shared step loop this calls into, and again at the actual process-spawn
+/// layer (`SystemCommandRunner::run`) -- unlike tool presence, that guard
+/// needs no external catalog to check, so there's no reason to trust a
+/// caller for it.
 pub fn run_docker_reclaim(
     store: &Store,
     runner: &dyn CommandRunner,

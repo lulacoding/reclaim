@@ -69,7 +69,21 @@ pub trait CommandRunner {
 pub struct SystemCommandRunner;
 
 impl CommandRunner for SystemCommandRunner {
+    /// Refuses `--volumes` here too, not just in [`run_command_sequence`]
+    /// (whose own [`refuse_if_volumes_flag`] call is what every current
+    /// caller actually goes through — this crate's sole `runner.run(..)`
+    /// call site). Duplicated at this, the lowest layer that actually
+    /// spawns a process, as defense in depth: the flag is refused before a
+    /// real process is ever created regardless of which path a future
+    /// caller takes to reach here, matching this guard's own stated
+    /// design intent elsewhere in this module.
     fn run(&self, spec: &CommandSpec) -> std::io::Result<StepOutput> {
+        if contains_volumes_flag(spec) {
+            return Err(std::io::Error::other(format!(
+                "refusing to run {:?}: --volumes would delete Docker volume data",
+                spec.command_line()
+            )));
+        }
         let output = Command::new(spec.program).args(spec.args).output()?;
         Ok(StepOutput {
             command_line: spec.command_line(),
@@ -151,6 +165,19 @@ pub struct ReclaimCommandResult {
 /// exactly the tool's own command line from RULES.md §2. Refuses
 /// `store_name`s this runner doesn't own (see [`commands_for`]) rather
 /// than guessing at a command.
+///
+/// **Precondition, not enforced here:** per ADR-009, a store's command is
+/// only ever safe to *offer* once tool detection has confirmed the
+/// executable is actually present -- this function trusts the caller to
+/// have already checked that. It can't check for itself: it only receives
+/// `store_name` (e.g. `"npm"`), not the [`reclaim_detect::tool_catalog::ToolDef`]
+/// that maps a store to the *executable* to probe for -- those can differ
+/// (`"nuget"` runs via `dotnet`) -- so there's no `command_name` here to
+/// call [`crate::command_on_path`] against. `reclaim-cli::managed_store::
+/// collect_store_items` is the current, sole real caller, and does check
+/// first, against the right `ToolDef`. If a second real caller is ever
+/// added, this is worth hardening for real rather than trusted by
+/// convention.
 pub fn run_reclaim_command(
     store: &Store,
     runner: &dyn CommandRunner,
@@ -171,10 +198,17 @@ pub fn run_reclaim_command(
 /// unconditionally on every step this crate runs, not just Docker's own
 /// sequence, so it catches the flag regardless of how a spec was built.
 pub fn refuse_if_volumes_flag(spec: &CommandSpec) -> Result<()> {
-    if spec.args.iter().any(|arg| arg.contains("--volumes")) {
+    if contains_volumes_flag(spec) {
         return Err(Error::VolumesFlagRefused(spec.command_line()));
     }
     Ok(())
+}
+
+/// The actual predicate behind [`refuse_if_volumes_flag`], factored out so
+/// [`SystemCommandRunner::run`] can apply the identical check at the OS
+/// process-spawn layer too, without duplicating the match logic itself.
+fn contains_volumes_flag(spec: &CommandSpec) -> bool {
+    spec.args.iter().any(|arg| arg.contains("--volumes"))
 }
 
 /// Shared step-execution loop behind both [`run_reclaim_command`] and

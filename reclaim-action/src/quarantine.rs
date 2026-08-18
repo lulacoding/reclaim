@@ -2,6 +2,13 @@
 //! T9/T12): the one way any item leaves its original location. Always a
 //! same-volume `MoveFileExW` rename into per-volume staging under
 //! `reclaim-store`'s journal — never a delete, never a copy-then-delete.
+//! One call here is one `MoveFileExW` per top-level candidate (a whole
+//! `node_modules`, not one call per file inside it), so this function
+//! itself is never a "syscall storm." The AV/EDR risk (THREAT_MODEL T5) is
+//! in a *caller* firing many of these back-to-back with no delay —
+//! batching/throttling across calls is BUILD_PLAN M6 item 1, deliberately
+//! not implemented here; see `reclaim-cli::clean_command::execute`'s
+//! TODO(M6) at its two bulk-move loops.
 
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};

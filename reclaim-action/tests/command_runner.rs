@@ -18,7 +18,7 @@ use std::time::SystemTime;
 
 use reclaim_action::{
     commands_for, run_reclaim_command, CommandRunner, CommandSpec, FreeSpaceSource, StepOutput,
-    SystemFreeSpace,
+    SystemCommandRunner, SystemFreeSpace,
 };
 use reclaim_store::Store;
 
@@ -395,4 +395,24 @@ fn a_failing_step_still_gets_an_honest_measurement_on_its_own_row() {
     let entries = store.audit_log_entries().unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].result, "failed");
+}
+
+#[test]
+fn the_real_runner_refuses_a_volumes_flag_before_spawning_anything() {
+    // Defense in depth (THREAT_MODEL T11): `run_command_sequence`'s own
+    // `refuse_if_volumes_flag` call is every current caller's actual
+    // guard, but `SystemCommandRunner` -- the layer that would actually
+    // spawn a process -- refuses it too, independently. `program` is
+    // deliberately not a real executable: if this ever fell through to
+    // `Command::new(..).output()`, the test would fail with a "program not
+    // found" `io::Error` instead of the refusal, not silently pass.
+    let runner = SystemCommandRunner;
+    let spec = CommandSpec {
+        program: "this-program-definitely-does-not-exist-xyz123",
+        args: &["system", "prune", "--volumes"],
+    };
+
+    let err = runner.run(&spec).expect_err("must refuse before spawning");
+
+    assert!(err.to_string().contains("--volumes"));
 }
