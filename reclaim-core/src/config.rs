@@ -17,6 +17,8 @@ pub struct Config {
     pub grace_period_days: u32,
     pub quarantine_dir: PathBuf,
     pub log_level: String,
+    #[serde(default)]
+    pub early_purge_enabled: bool,
 }
 
 impl Default for Config {
@@ -25,6 +27,7 @@ impl Default for Config {
             grace_period_days: MIN_GRACE_PERIOD_DAYS,
             quarantine_dir: PathBuf::from("quarantine"),
             log_level: "info".to_string(),
+            early_purge_enabled: false,
         }
     }
 }
@@ -39,6 +42,18 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let contents = std::fs::read_to_string(path)?;
         Self::from_toml_str(&contents)
+    }
+
+    /// Serializes this config to TOML and writes it to `path`, creating
+    /// any missing parent directories first (matches `%LOCALAPPDATA%\
+    /// Reclaim\` not existing yet on a first run).
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let contents = toml::to_string_pretty(self)?;
+        std::fs::write(path, contents)?;
+        Ok(())
     }
 
     /// Returns a copy of this config with safety limits enforced —
@@ -103,6 +118,45 @@ mod tests {
     #[test]
     fn default_grace_period_already_meets_the_floor() {
         assert!(Config::default().grace_period_days >= MIN_GRACE_PERIOD_DAYS);
+    }
+
+    #[test]
+    fn early_purge_enabled_defaults_false() {
+        assert!(!Config::default().early_purge_enabled);
+    }
+
+    #[test]
+    fn save_then_load_round_trips_every_field() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "reclaim-core-test-config-save-{}.toml",
+            std::process::id()
+        ));
+        let original = Config {
+            grace_period_days: 45,
+            quarantine_dir: std::path::PathBuf::from("D:\\Quarantine"),
+            log_level: "debug".to_string(),
+            early_purge_enabled: true,
+        };
+
+        original.save(&path).unwrap();
+        let reloaded = Config::load(&path).unwrap();
+
+        assert_eq!(reloaded, original);
+    }
+
+    #[test]
+    fn save_creates_missing_parent_directories() {
+        let dir = std::env::temp_dir().join(format!(
+            "reclaim-core-test-config-parent-{}",
+            std::process::id()
+        ));
+        assert!(!dir.exists());
+        let path = dir.join("config.toml");
+
+        Config::default().save(&path).unwrap();
+
+        assert!(path.exists());
     }
 
     #[test]

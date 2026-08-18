@@ -12,6 +12,9 @@ pub enum Error {
     #[error("failed to parse TOML: {0}")]
     TomlParse(#[from] toml::de::Error),
 
+    #[error("failed to serialize TOML: {0}")]
+    TomlSerialize(#[from] toml::ser::Error),
+
     #[error("protected path, refusing: {0}")]
     ProtectedPath(String),
 }
