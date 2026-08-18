@@ -9,3 +9,10 @@ dev.db
 *.db-journal
 .claude/settings.local.json
 .DS_Store
+
+# Locally-fetched agent skills (regenerated from skills-lock.json; the
+# lockfile is tracked, its downloaded content isn't).
+.agents/
+
+# Design-canvas exports (mockup source, not shipped project docs).
+docs/design/ClaudeUIDesign/

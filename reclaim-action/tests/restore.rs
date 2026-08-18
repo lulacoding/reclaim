@@ -75,6 +75,22 @@ fn quarantine_then_restore_is_byte_identical_at_original_path() {
 }
 
 #[test]
+fn restore_reports_the_sizes_of_what_it_restored() {
+    let base = tempfile::tempdir().unwrap();
+    let (store, op_id, _item_dir, _staging) = quarantine_one(base.path());
+
+    let restored = restore(&store, op_id).unwrap();
+
+    assert_eq!(restored.len(), 1);
+    assert_eq!(restored[0].size_bytes, 4);
+    assert_eq!(
+        restored[0].size_on_disk, 4,
+        "restore must report the same size-on-disk it journaled at quarantine time, \
+         not just the logical size_bytes"
+    );
+}
+
+#[test]
 fn restore_recreates_a_deleted_parent_directory() {
     let base = tempfile::tempdir().unwrap();
     let (store, op_id, item_dir, _staging) = quarantine_one(base.path());

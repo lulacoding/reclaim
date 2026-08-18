@@ -67,10 +67,19 @@ fn status_reflects_the_manifest_after_a_clean() {
         .as_str()
         .unwrap()
         .ends_with("node_modules"));
-    assert!(items[0]["size_bytes"].as_u64().unwrap() >= 4000);
+    assert!(items[0]["logical_size"].as_u64().unwrap() >= 4000);
+    assert!(
+        items[0]["dedup_size"].as_u64().unwrap() >= 4000,
+        "status must surface the dedup size-on-disk stored alongside the logical size, \
+         same naming convention as `dq list`/`dq clean`"
+    );
     assert!(items[0]["restore_deadline_unix_ns"].as_i64().unwrap() > 0);
     assert_eq!(
-        result["total_bytes"].as_u64().unwrap(),
-        items[0]["size_bytes"].as_u64().unwrap()
+        result["total_logical_bytes"].as_u64().unwrap(),
+        items[0]["logical_size"].as_u64().unwrap()
+    );
+    assert_eq!(
+        result["total_dedup_bytes"].as_u64().unwrap(),
+        items[0]["dedup_size"].as_u64().unwrap()
     );
 }

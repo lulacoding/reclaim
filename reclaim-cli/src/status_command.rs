@@ -7,14 +7,31 @@ use std::time::SystemTime;
 
 use serde::Serialize;
 
+/// One quarantined item, the shape both `--json` and human output are
+/// built from. `logical_size`/`dedup_size` match `dq list`/`dq clean`'s
+/// naming (see [`crate::list_command::Candidate`]) rather than the
+/// store layer's `size_bytes`/`size_on_disk` — the CLI-facing contract
+/// stays consistent across every subcommand even where the underlying
+/// crates don't share a name.
 #[derive(Serialize)]
 struct StatusItem {
     item_id: i64,
     op_id: i64,
     source_path: PathBuf,
     quarantine_path: PathBuf,
-    size_bytes: u64,
+    logical_size: u64,
+    dedup_size: u64,
     restore_deadline_unix_ns: i64,
+}
+
+/// Everything `dq status --json` prints — a named, documented envelope
+/// (not an ad-hoc `serde_json::json!`) so the shape is as locked-down as
+/// every other subcommand's.
+#[derive(Serialize)]
+struct StatusReport {
+    items: Vec<StatusItem>,
+    total_logical_bytes: u64,
+    total_dedup_bytes: u64,
 }
 
 fn unix_nanos(t: SystemTime) -> i64 {
@@ -34,7 +51,8 @@ pub fn run(db: &Path, json: bool) {
         }
     };
 
-    let total_bytes: u64 = items.iter().map(|i| i.size_bytes).sum();
+    let total_logical_bytes: u64 = items.iter().map(|i| i.size_bytes).sum();
+    let total_dedup_bytes: u64 = items.iter().map(|i| i.size_on_disk).sum();
     let status_items: Vec<StatusItem> = items
         .into_iter()
         .map(|i| StatusItem {
@@ -42,19 +60,21 @@ pub fn run(db: &Path, json: bool) {
             op_id: i.op_id.0,
             source_path: i.source_path,
             quarantine_path: i.quarantine_path,
-            size_bytes: i.size_bytes,
+            logical_size: i.size_bytes,
+            dedup_size: i.size_on_disk,
             restore_deadline_unix_ns: unix_nanos(i.restore_deadline),
         })
         .collect();
 
     if json {
+        let report = StatusReport {
+            items: status_items,
+            total_logical_bytes,
+            total_dedup_bytes,
+        };
         println!(
             "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "items": status_items,
-                "total_bytes": total_bytes,
-            }))
-            .expect("always serializes")
+            serde_json::to_string_pretty(&report).expect("StatusReport always serializes")
         );
         return;
     }
@@ -67,16 +87,18 @@ pub fn run(db: &Path, json: bool) {
     for item in &status_items {
         let days_left = (item.restore_deadline_unix_ns - now) / 1_000_000_000 / 86_400;
         println!(
-            "  op {:>4}  {:>10}  {}  (purge in ~{} day(s))",
+            "  op {:>4}  {:>10}  (logical {})  {}  (purge in ~{} day(s))",
             item.op_id,
-            crate::scan_command::human_bytes(item.size_bytes),
+            crate::scan_command::human_bytes(item.dedup_size),
+            crate::scan_command::human_bytes(item.logical_size),
             item.source_path.display(),
             days_left.max(0),
         );
     }
     println!(
-        "  Total: {} across {} item(s)",
-        crate::scan_command::human_bytes(total_bytes),
+        "  Total: {} (logical {}) across {} item(s)",
+        crate::scan_command::human_bytes(total_dedup_bytes),
+        crate::scan_command::human_bytes(total_logical_bytes),
         status_items.len()
     );
 }

@@ -43,6 +43,24 @@ fn quarantined_items_is_empty_until_the_operation_completes() {
 }
 
 #[test]
+fn quarantined_items_carries_size_on_disk_alongside_size_bytes() {
+    let store = Store::open_in_memory().unwrap();
+    let op_id = store
+        .begin_operation("quarantine", &[item("target")])
+        .unwrap();
+    store.complete_operation(op_id, 30).unwrap();
+
+    let items = store.quarantined_items(op_id).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].size_bytes, 123);
+    assert_eq!(
+        items[0].size_on_disk, 100,
+        "dedup size-on-disk must survive the write-ahead journal round trip, \
+         not just the logical size_bytes"
+    );
+}
+
+#[test]
 fn all_quarantined_items_spans_every_operation() {
     let store = Store::open_in_memory().unwrap();
     let op1 = store.begin_operation("quarantine", &[item("a")]).unwrap();

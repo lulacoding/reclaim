@@ -205,6 +205,10 @@ fn print_human(summary: &ScanSummary) {
             );
         }
     }
+    match summary.scan_id {
+        Some(id) => println!("  Scan id: {id}"),
+        None => println!("  Scan id: (not recorded — could not open the state database)"),
+    }
 }
 
 pub(crate) fn human_bytes(bytes: u64) -> String {

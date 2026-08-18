@@ -52,6 +52,7 @@ pub struct StorePlanItem {
     pub store_dir: Option<PathBuf>,
     pub tier: Tier,
     pub rebuild_cost: RebuildCost,
+    pub logical_size: u64,
     pub dedup_size: u64,
 }
 
@@ -82,6 +83,7 @@ fn to_store_plan_item(item: &StoreItem) -> StorePlanItem {
         store_dir: item.store_dir.clone(),
         tier: Tier::ProbablySafe,
         rebuild_cost: RebuildCost::Expensive,
+        logical_size: item.logical_size,
         dedup_size: item.dedup_size,
     }
 }
@@ -177,6 +179,7 @@ use reclaim_store::Store;
 pub struct QuarantinedResult {
     pub path: PathBuf,
     pub quarantine_path: PathBuf,
+    pub logical_size: u64,
     pub dedup_size: u64,
 }
 
@@ -268,6 +271,7 @@ fn execute(
                 quarantined.push(QuarantinedResult {
                     path: item.path.clone(),
                     quarantine_path,
+                    logical_size: item.logical_size,
                     dedup_size: item.dedup_size,
                 });
             }
@@ -351,6 +355,7 @@ fn execute(
                         quarantined.push(QuarantinedResult {
                             path: store_dir,
                             quarantine_path,
+                            logical_size: item.logical_size,
                             dedup_size: item.dedup_size,
                         });
                     }
@@ -508,8 +513,9 @@ fn print_plan_human(plan: &CleanPlan) {
     } else {
         for item in &plan.items {
             println!(
-                "    {:>10}  {}  rule={}",
+                "    {:>10}  (logical {})  {}  rule={}",
                 crate::scan_command::human_bytes(item.dedup_size),
+                crate::scan_command::human_bytes(item.logical_size),
                 item.path.display(),
                 item.rule_id.unwrap_or("-"),
             );
@@ -530,16 +536,30 @@ fn print_plan_human(plan: &CleanPlan) {
                 format!("run: {}", item.commands.join(" && "))
             };
             println!(
-                "    {:>10}  {:<8} {}",
+                "    {:>10}  (logical {})  {:<8} {}",
                 crate::scan_command::human_bytes(item.dedup_size),
+                crate::scan_command::human_bytes(item.logical_size),
                 item.tool,
                 via,
             );
         }
+        println!(
+            "  Estimated: ~{} currently on disk across {} store(s)",
+            crate::scan_command::human_bytes(plan.store_estimated_bytes),
+            plan.store_items.len()
+        );
     }
 }
 
 fn print_execution_human(execution: &CleanExecution) {
+    for item in &execution.quarantined {
+        println!(
+            "    {:>10}  {} -> {}",
+            crate::scan_command::human_bytes(item.dedup_size),
+            item.path.display(),
+            item.quarantine_path.display(),
+        );
+    }
     println!(
         "Quarantined {} item(s); {} pending reclaim (freed once the grace period ends, or on purge).",
         execution.quarantined.len(),
@@ -771,6 +791,10 @@ mod tests {
         assert_eq!(execution.quarantined.len(), 1);
         assert!(execution.pending_reclaim_bytes >= 3000);
         assert!(execution.failures.is_empty());
+        assert!(
+            execution.quarantined[0].logical_size >= 3000,
+            "QuarantinedResult must carry logical_size, same parity as CleanItem/StorePlanItem"
+        );
     }
 
     #[test]
@@ -838,9 +862,14 @@ mod tests {
                 "npm cache clean --force".to_string()
             ]
         );
+        assert_eq!(
+            plan_items[0].logical_size, 3000,
+            "StorePlanItem must carry logical_size, same parity as CleanItem"
+        );
         assert_eq!(plan_items[1].tool, "gradle");
         assert_eq!(plan_items[1].action, "move");
         assert!(plan_items[1].commands.is_empty());
+        assert_eq!(plan_items[1].logical_size, 1000);
 
         // Building the dry-run projection is read-only -- nothing here
         // ever calls `execute`, so both source directories must be

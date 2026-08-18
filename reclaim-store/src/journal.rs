@@ -67,6 +67,12 @@ pub struct QuarantinedItem {
     pub source_path: PathBuf,
     pub quarantine_path: PathBuf,
     pub size_bytes: u64,
+    /// Hardlink-deduped size-on-disk, as journaled by [`Store::begin_operation`]'s
+    /// `PlannedItem::size_on_disk` — the same figure `dq list`/`dq clean` call
+    /// `dedup_size`. Kept alongside `size_bytes` (the logical figure) rather than
+    /// replacing it, since both are already stored and each answers a different
+    /// question (V1_DESIGN §11.2's "never sum linked bytes twice" applies here too).
+    pub size_on_disk: u64,
     pub tier: Tier,
     pub reclaim_method: ReclaimMethod,
     /// When this item's grace period ends — `dq status`'s purge deadline.
@@ -221,7 +227,7 @@ impl Store {
     /// when asked to restore that one operation.
     pub fn quarantined_items(&self, op_id: OperationId) -> Result<Vec<QuarantinedItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method, restore_deadline_unix_ns
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, size_on_disk, tier, reclaim_method, restore_deadline_unix_ns
              FROM quarantine_items WHERE op_id = ?1 AND status = 'quarantined'",
         )?;
         let rows = stmt.query_map(params![op_id.0], row_to_quarantined_item)?;
@@ -233,7 +239,7 @@ impl Store {
     /// restore-all restores.
     pub fn all_quarantined_items(&self) -> Result<Vec<QuarantinedItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, op_id, source_path, quarantine_path, size_bytes, tier, reclaim_method, restore_deadline_unix_ns
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, size_on_disk, tier, reclaim_method, restore_deadline_unix_ns
              FROM quarantine_items WHERE status = 'quarantined'",
         )?;
         let rows = stmt.query_map([], row_to_quarantined_item)?;
@@ -308,13 +314,14 @@ fn row_to_quarantined_item(row: &rusqlite::Row) -> rusqlite::Result<QuarantinedI
         source_path: PathBuf::from(row.get::<_, String>(2)?),
         quarantine_path: PathBuf::from(row.get::<_, String>(3)?),
         size_bytes: row.get(4)?,
-        tier: serde_json::from_str(&row.get::<_, String>(5)?).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
-        })?,
-        reclaim_method: serde_json::from_str(&row.get::<_, String>(6)?).map_err(|e| {
+        size_on_disk: row.get(5)?,
+        tier: serde_json::from_str(&row.get::<_, String>(6)?).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        restore_deadline: from_unix_nanos(row.get(7)?),
+        reclaim_method: serde_json::from_str(&row.get::<_, String>(7)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        restore_deadline: from_unix_nanos(row.get(8)?),
     })
 }
 

@@ -219,6 +219,36 @@ fn dq_list_reports_a_nonzero_dedup_size_for_safe_candidates() {
 }
 
 #[test]
+fn dq_list_json_candidate_shape_is_locked_down() {
+    let dir = temp_fixture_dir();
+    build_mixed_fixture(dir.path());
+
+    let report = run_dq_list_json(dir.path());
+
+    assert!(report["root"].as_str().is_some());
+    let safe = report["safe"].as_array().unwrap();
+    let target = safe
+        .iter()
+        .find(|c| c["path"].as_str().unwrap().ends_with("target"))
+        .unwrap();
+    for field in [
+        "path",
+        "logical_size",
+        "dedup_size",
+        "tier",
+        "method",
+        "rebuild_cost",
+        "rule_id",
+    ] {
+        assert!(
+            target.get(field).is_some(),
+            "Candidate JSON is missing `{field}`: {target:?}"
+        );
+    }
+    assert!(target["logical_size"].as_u64().unwrap() >= 5000);
+}
+
+#[test]
 fn dq_list_does_not_modify_the_scanned_tree() {
     let dir = temp_fixture_dir();
     build_mixed_fixture(dir.path());
@@ -250,5 +280,10 @@ fn dq_list_human_readable_output_runs_without_error() {
     assert!(
         stdout.to_ascii_lowercase().contains("safe"),
         "stdout was: {stdout}"
+    );
+    assert!(
+        stdout.to_ascii_lowercase().contains("logical"),
+        "human output must show logical_size, not only dedup_size (JSON carries \
+         both per Candidate): {stdout}"
     );
 }

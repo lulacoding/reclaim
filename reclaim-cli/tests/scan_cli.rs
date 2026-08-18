@@ -166,6 +166,11 @@ fn dq_scan_human_readable_output_runs_without_error() {
         stdout.to_ascii_lowercase().contains("total"),
         "stdout was: {stdout}"
     );
+    assert!(
+        stdout.to_ascii_lowercase().contains("scan id"),
+        "human output must show the scan_id JSON carries, so it's not a JSON-only \
+         field: {stdout}"
+    );
 }
 
 #[test]

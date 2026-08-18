@@ -31,6 +31,11 @@ pub struct RestoredItem {
     /// T13) — the item landed at `restored_path` instead, and
     /// `source_path` itself was never touched.
     pub conflict: bool,
+    /// Carried straight through from the [`QuarantinedItem`] this restored
+    /// — the same logical/dedup split `dq status` reports, so a caller can
+    /// show "how much came back" without a second lookup.
+    pub size_bytes: u64,
+    pub size_on_disk: u64,
 }
 
 /// Restores every item still quarantined under operation `op_id` back to
@@ -76,6 +81,8 @@ fn restore_items(store: &Store, items: Vec<QuarantinedItem>) -> Result<Vec<Resto
             source_path: item.source_path,
             restored_path,
             conflict,
+            size_bytes: item.size_bytes,
+            size_on_disk: item.size_on_disk,
         });
     }
     store.complete_restore(restore_op_id)?;

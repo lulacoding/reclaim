@@ -58,7 +58,7 @@ reclaim/
 │   │   └── CLAUDE_CODE_SETUP.md          ⬛ ← RECLAIM_CLAUDE_CODE_SETUP.md
 │   │
 │   ├── reference/                       ← write per-feature, not now
-│   │   ├── CLI.md                        ⬜ `dq` reference (as CLI stabilizes)
+│   │   ├── CLI.md                        ⬛ `dq` reference (as CLI stabilizes)
 │   │   └── CONFIG.md                     ⬜ config keys + safe ranges
 │   │
 │   └── user/                            ← write once the tool runs

@@ -84,6 +84,41 @@ fn run_clean(
 }
 
 #[test]
+fn human_output_shows_the_same_information_as_json() {
+    let env = setup();
+
+    let dry_run = run_clean(&env, &["--dry-run"], None);
+    assert!(
+        dry_run.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&dry_run.stderr)
+    );
+    let dry_run_stdout = String::from_utf8(dry_run.stdout).unwrap();
+    assert!(
+        dry_run_stdout.contains("node_modules"),
+        "human dry-run output must name the planned item: {dry_run_stdout}"
+    );
+    assert!(
+        dry_run_stdout.to_ascii_lowercase().contains("logical"),
+        "human dry-run output must show logical_size, not only dedup_size \
+         (JSON carries both): {dry_run_stdout}"
+    );
+
+    let executed = run_clean(&env, &["--yes"], None);
+    assert!(
+        executed.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&executed.stderr)
+    );
+    let executed_stdout = String::from_utf8(executed.stdout).unwrap();
+    assert!(
+        executed_stdout.contains("node_modules"),
+        "human execution output must itemize what was quarantined, not just \
+         a count -- JSON's `quarantined` array does: {executed_stdout}"
+    );
+}
+
+#[test]
 fn dry_run_moves_nothing() {
     let env = setup();
     let node_modules = env.fixture.path().join("node_modules");
@@ -109,6 +144,73 @@ fn dry_run_moves_nothing() {
         "only the Safe node_modules candidate should be planned: {items:?}"
     );
     assert!(items[0]["path"].as_str().unwrap().ends_with("node_modules"));
+}
+
+#[test]
+fn dry_run_json_shape_is_locked_down() {
+    let env = setup();
+
+    let output = run_clean(&env, &["--dry-run", "--json"], None);
+    assert!(output.status.success());
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(plan["outcome"], "dry_run");
+    let inner = &plan["plan"];
+    for field in [
+        "root",
+        "items",
+        "planned_bytes",
+        "store_items",
+        "store_estimated_bytes",
+    ] {
+        assert!(
+            inner.get(field).is_some(),
+            "CleanPlan JSON is missing `{field}`: {inner:?}"
+        );
+    }
+    let item = &inner["items"][0];
+    for field in ["path", "logical_size", "dedup_size", "tier", "rule_id"] {
+        assert!(
+            item.get(field).is_some(),
+            "CleanItem JSON is missing `{field}`: {item:?}"
+        );
+    }
+    // No --stores requested: the store side of the plan must still be
+    // present as empty, never absent -- a UI switching on these fields
+    // shouldn't have to special-case "the flag wasn't passed".
+    assert_eq!(inner["store_items"].as_array().unwrap().len(), 0);
+    assert_eq!(inner["store_estimated_bytes"], 0);
+}
+
+#[test]
+fn executed_json_shape_is_locked_down() {
+    let env = setup();
+
+    let output = run_clean(&env, &["--yes", "--json"], None);
+    assert!(output.status.success());
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(result["outcome"], "executed");
+    let execution = &result["execution"];
+    for field in [
+        "quarantined",
+        "pending_reclaim_bytes",
+        "store_commands",
+        "reclaimed_bytes",
+        "failures",
+    ] {
+        assert!(
+            execution.get(field).is_some(),
+            "CleanExecution JSON is missing `{field}`: {execution:?}"
+        );
+    }
+    let quarantined = &execution["quarantined"][0];
+    for field in ["path", "quarantine_path", "logical_size", "dedup_size"] {
+        assert!(
+            quarantined.get(field).is_some(),
+            "QuarantinedResult JSON is missing `{field}`: {quarantined:?}"
+        );
+    }
 }
 
 #[test]

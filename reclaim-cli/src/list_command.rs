@@ -198,8 +198,9 @@ fn print_tier_section(label: &str, candidates: &[Candidate]) {
     println!("  {label}:");
     for candidate in candidates {
         println!(
-            "    {:>10}  {}  method={} rebuild={} rule={}",
+            "    {:>10}  (logical {})  {}  method={} rebuild={} rule={}",
             human_bytes(candidate.dedup_size),
+            human_bytes(candidate.logical_size),
             candidate.path.display(),
             format_method(&candidate.method),
             format_rebuild_cost(candidate.rebuild_cost),
