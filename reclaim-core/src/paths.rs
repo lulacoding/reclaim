@@ -14,6 +14,7 @@
 #[derive(Debug, Clone, Default)]
 pub struct ProtectedPaths {
     roots: Vec<Vec<String>>,
+    display: Vec<String>,
 }
 
 impl ProtectedPaths {
@@ -113,6 +114,8 @@ impl ProtectedPaths {
     /// discovered OneDrive/Dropbox/Google Drive sync roots get added — the
     /// denylist itself doesn't need to change, only who calls this.
     pub fn add_root(&mut self, root: &str) {
+        self.display.push(root.to_string());
+
         let components = normalize_components(root);
 
         if let Ok(resolved) = std::fs::canonicalize(root) {
@@ -136,6 +139,14 @@ impl ProtectedPaths {
         self.roots.iter().any(|root| {
             !root.is_empty() && candidate.len() >= root.len() && candidate[..root.len()] == root[..]
         })
+    }
+
+    /// The literal root strings this denylist was built from — the
+    /// human-typed or env-resolved form, not the internal normalized
+    /// form used for matching. For display only (e.g. Settings' Protected
+    /// Paths viewer); never used by `is_protected`.
+    pub fn display_roots(&self) -> &[String] {
+        &self.display
     }
 }
 
