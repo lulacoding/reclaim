@@ -78,6 +78,12 @@ const MIGRATIONS: &[&str] = &[
         path TEXT,
         checked_at_unix_ns INTEGER NOT NULL
     );",
+    // 5: purge bookkeeping on quarantine_items (reclaim-action's purge
+    // primitive, ADR-014). status also takes on 'purging' (intent
+    // journaled, delete not yet confirmed complete) and 'purged'
+    // (terminal) -- both free-text, no schema change needed for those.
+    "ALTER TABLE quarantine_items ADD COLUMN purged_at_unix_ns INTEGER;
+    ALTER TABLE quarantine_items ADD COLUMN purge_attempted_at_unix_ns INTEGER;",
 ];
 
 /// Brings `conn`'s schema up to the latest version, running only the

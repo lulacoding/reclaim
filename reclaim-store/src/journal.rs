@@ -247,6 +247,73 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Single quarantined item lookup by id, or `None` if `item_id`
+    /// doesn't exist or isn't currently `'quarantined'`. Used to validate
+    /// what's being purged before anything is deleted.
+    pub fn quarantined_item(&self, item_id: i64) -> Result<Option<QuarantinedItem>> {
+        self.conn
+            .query_row(
+                "SELECT id, op_id, source_path, quarantine_path, size_bytes, size_on_disk, tier, reclaim_method, restore_deadline_unix_ns
+                 FROM quarantine_items WHERE id = ?1 AND status = 'quarantined'",
+                params![item_id],
+                row_to_quarantined_item,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Journals intent to purge `item_id` **before** the delete happens
+    /// -- the same durable-intent-first shape as [`Store::begin_operation`],
+    /// applied to the delete primitive instead of the move primitive. A
+    /// no-op (not an error) if `item_id` isn't currently `'quarantined'`.
+    pub fn begin_purge(&self, item_id: i64) -> Result<()> {
+        let now_ns = to_unix_nanos(SystemTime::now());
+        self.conn.execute(
+            "UPDATE quarantine_items SET status = 'purging', purge_attempted_at_unix_ns = ?1
+             WHERE id = ?2 AND status = 'quarantined'",
+            params![now_ns, item_id],
+        )?;
+        Ok(())
+    }
+
+    /// Finalizes a purge **after** the delete succeeds. Guarded on
+    /// `'purging'`, not `'quarantined'` -- only ever finalizes a purge
+    /// that was actually begun via [`Store::begin_purge`].
+    pub fn complete_purge_item(&self, item_id: i64) -> Result<()> {
+        let now_ns = to_unix_nanos(SystemTime::now());
+        self.conn.execute(
+            "UPDATE quarantine_items SET status = 'purged', purged_at_unix_ns = ?1
+             WHERE id = ?2 AND status = 'purging'",
+            params![now_ns, item_id],
+        )?;
+        Ok(())
+    }
+
+    /// Every item left mid-purge (`status = 'purging'`) -- crash-orphaned
+    /// intent for a caller to reconcile against the filesystem (see
+    /// `reclaim_action::recover_purges`).
+    pub fn items_purging(&self) -> Result<Vec<QuarantinedItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, op_id, source_path, quarantine_path, size_bytes, size_on_disk, tier, reclaim_method, restore_deadline_unix_ns
+             FROM quarantine_items WHERE status = 'purging'",
+        )?;
+        let rows = stmt.query_map([], row_to_quarantined_item)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Reverts an interrupted purge: the delete never ran, or didn't
+    /// finish, so the item goes back to being a normal, restorable
+    /// quarantined item -- nothing was lost.
+    pub fn revert_incomplete_purge(&self, item_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE quarantine_items SET status = 'quarantined', purge_attempted_at_unix_ns = NULL
+             WHERE id = ?1 AND status = 'purging'",
+            params![item_id],
+        )?;
+        Ok(())
+    }
+
     /// Journals intent to restore the quarantine items named by
     /// `item_ids` as a new operation of kind `"restore"`, **before** any
     /// of them actually moves back — mirroring [`Store::begin_operation`]
