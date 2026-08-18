@@ -26,7 +26,15 @@ pub const MANAGED_STORE_TOOLS: &[ToolDef] = &[
     ToolDef {
         name: "npm",
         command_name: "npm",
-        store_dir: Some(("APPDATA", "npm-cache")),
+        // Confirmed empirically (BUILD_PLAN M4 personal drill): npm's own
+        // default on Windows is `%LocalAppData%\npm-cache`, not
+        // `%AppData%\npm-cache` -- verified against `npm config get cache`
+        // on a real machine with an active 105 MB cache. The `APPDATA`
+        // (Roaming) variant used before this fix pointed at a directory
+        // that never exists by default, so npm was silently skipped
+        // entirely by `collect_store_items` despite being installed and
+        // having real cache data -- never offered, never an error either.
+        store_dir: Some(("LOCALAPPDATA", "npm-cache")),
     },
     ToolDef {
         name: "yarn",

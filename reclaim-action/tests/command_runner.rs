@@ -1,7 +1,13 @@
 //! Behavioral tests for the native-command runner (BUILD_PLAN M4 item 2,
-//! ADR-009). Every test runs against a [`MockRunner`] -- no store's real
-//! GC ever executes here, per this crate's own rule (never run commands
-//! in tests; assert the command string + args instead). Free-space
+//! ADR-009). Almost every test runs against a [`MockRunner`] -- no store's
+//! real GC ever executes here, per this crate's own rule (never run
+//! commands in tests; assert the command string + args instead). The one
+//! exception is [`the_real_runner_can_run_a_dot_cmd_shim_style_program`],
+//! which deliberately runs [`SystemCommandRunner`] against a synthetic
+//! temp `.cmd` script (never a real store's tool) -- a real Windows-machine
+//! bug (BUILD_PLAN M4 personal drill) was invisible to every mocked test
+//! here, since it lived entirely in `SystemCommandRunner`'s own process-
+//! spawning, not in anything a mock exercises. Free-space
 //! measurement (BUILD_PLAN M4 item 3) is likewise mocked via
 //! [`FakeFreeSpace`] wherever a test cares about the actual number --
 //! NTFS reclaims deleted clusters asynchronously, so asserting on a real
@@ -12,6 +18,7 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::fs;
 use std::io;
 use std::path::Path;
 use std::time::SystemTime;
@@ -403,9 +410,13 @@ fn the_real_runner_refuses_a_volumes_flag_before_spawning_anything() {
     // `refuse_if_volumes_flag` call is every current caller's actual
     // guard, but `SystemCommandRunner` -- the layer that would actually
     // spawn a process -- refuses it too, independently. `program` is
-    // deliberately not a real executable: if this ever fell through to
-    // `Command::new(..).output()`, the test would fail with a "program not
-    // found" `io::Error` instead of the refusal, not silently pass.
+    // deliberately not a real executable: `SystemCommandRunner` spawns
+    // through `cmd /C` (a real, always-present binary, needed so `.cmd`
+    // shims like npm resolve at all), so a regressed guard wouldn't
+    // surface as a Rust-level `io::Error` here -- cmd itself would spawn
+    // fine and just report "not recognized" in its own stderr with a
+    // nonzero exit, which `Command::output()` reports as `Ok`, not `Err`.
+    // `expect_err` below only passes if the refusal itself fires.
     let runner = SystemCommandRunner;
     let spec = CommandSpec {
         program: "this-program-definitely-does-not-exist-xyz123",
@@ -415,4 +426,45 @@ fn the_real_runner_refuses_a_volumes_flag_before_spawning_anything() {
     let err = runner.run(&spec).expect_err("must refuse before spawning");
 
     assert!(err.to_string().contains("--volumes"));
+}
+
+#[test]
+fn the_real_runner_can_run_a_dot_cmd_shim_style_program() {
+    // Regression test for a real bug found on a real Windows machine
+    // (BUILD_PLAN M4 personal drill): npm/yarn/pnpm are `.cmd` shims on
+    // Windows -- `where npm` resolves to `npm.cmd`, not an `.exe` -- and a
+    // bare `Command::new("npm")` fails with a "program not found"
+    // `io::Error` because `std::process::Command` doesn't apply the
+    // `PATHEXT`-style extension resolution a real shell (or `where`) does.
+    // This never surfaced in any earlier test because every one of them
+    // uses a mocked `CommandRunner`; only `SystemCommandRunner` itself
+    // could catch it, and only against a real `.cmd`-shaped program.
+    // Doesn't need a real Node.js install: an extension-less path to a
+    // temp `.cmd` file reproduces the exact resolution `commands_for`'s
+    // bare `"npm"` needs, without touching PATH.
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("fake-tool.cmd");
+    fs::write(&script, "@echo off\r\necho fake-tool-ran\r\n").unwrap();
+    let program: &'static str = Box::leak(
+        script
+            .with_extension("")
+            .to_str()
+            .unwrap()
+            .to_string()
+            .into_boxed_str(),
+    );
+
+    let runner = SystemCommandRunner;
+    let spec = CommandSpec { program, args: &[] };
+
+    let result = runner
+        .run(&spec)
+        .expect("must resolve and run the .cmd shim");
+
+    assert_eq!(result.exit_code, Some(0));
+    assert!(
+        result.stdout.contains("fake-tool-ran"),
+        "stdout was: {:?}",
+        result.stdout
+    );
 }

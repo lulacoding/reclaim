@@ -84,7 +84,20 @@ impl CommandRunner for SystemCommandRunner {
                 spec.command_line()
             )));
         }
-        let output = Command::new(spec.program).args(spec.args).output()?;
+        // Spawned through `cmd /C`, not `Command::new(spec.program)`
+        // directly: npm/yarn/pnpm are `.cmd` shims on Windows (confirmed
+        // on a real machine, BUILD_PLAN M4 personal drill), and
+        // `std::process::Command` does not apply `PATHEXT`-style
+        // extension resolution the way a real shell (or `where`, which
+        // `command_on_path`/tool detection already uses) does -- a bare
+        // `Command::new("npm")` fails with a "program not found" `io::Error`
+        // even when npm is genuinely on PATH. `cmd /C` resolves it exactly
+        // as an interactive shell would, for `.cmd`/`.bat`/`.exe` alike.
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg(spec.program)
+            .args(spec.args)
+            .output()?;
         Ok(StepOutput {
             command_line: spec.command_line(),
             exit_code: output.status.code(),
