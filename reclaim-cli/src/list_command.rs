@@ -90,6 +90,7 @@ impl ListReport {
 }
 
 pub fn run(root: &Path, tier_filter: Option<Tier>, json: bool) {
+    crate::scan_command::validate_root_or_exit(root);
     let mut report = collect(root);
     if let Some(tier) = tier_filter {
         report.retain_only(tier);

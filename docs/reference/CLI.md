@@ -54,11 +54,22 @@ error mid-restore, …), the process:
 2. Prints a one-line diagnostic to stderr.
 3. Exits non-zero.
 
-A caller (including the future Tauri UI) should treat a non-zero exit as
-the error signal and read stderr for the message; it should not attempt
-to parse stdout when the process failed. This is deliberately simple
-rather than a `{"error": "..."}` envelope, since every current failure
-mode is a hard stop with nothing partial to report.
+A caller (including the Tauri UI) should treat a non-zero exit as the
+error signal and read stderr for the message; it should not attempt to
+parse stdout when the process failed. This is deliberately simple rather
+than a `{"error": "..."}` envelope, since every current failure mode is a
+hard stop with nothing partial to report.
+
+`scan`/`list`/`clean` validate their `path` argument up front: a
+nonexistent path or a path that isn't a directory is `error: path does
+not exist: <path>` / `error: not a directory: <path>` (exit 1), never a
+silently empty report. This matters in practice — OneDrive Known Folder
+Move relocates Desktop/Documents/etc. out from under the hardcoded
+`%USERPROFILE%\<Folder>` path, so a user-typed `C:\Users\<name>\Desktop`
+can stop existing while the real folder is still there under
+`...\OneDrive\Desktop`; without this check, `reclaim_scan::scan` walks
+the missing path and returns an empty-but-successful result, which the
+Tauri UI could not distinguish from "genuinely nothing to clean here."
 
 Two related, non-error states that are easy to mistake for errors:
 

@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 use std::time::SystemTime;
 
 use reclaim_scan::{DirectoryTotal, Scan, ScanResult};
@@ -46,7 +47,29 @@ pub fn default_db_path() -> PathBuf {
         .join("reclaim.db")
 }
 
+/// Validates that `root` exists and is a directory before any command
+/// walks it — `reclaim_scan::scan` returns an empty, "successful" result
+/// for a path that doesn't exist (it's a directory walker, not a stat
+/// check), which without this looks identical on stdout to "genuinely
+/// nothing to report." Real-world trigger: OneDrive Known Folder Move
+/// relocates Desktop/Documents/etc. out from under the hardcoded
+/// `%USERPROFILE%\<Folder>` path, so a user-typed `C:\Users\<name>\Desktop`
+/// can silently stop existing while the folder itself is still very much
+/// there under `...\OneDrive\Desktop`. Shared by `scan`/`list`/`clean`,
+/// the three commands that take a scan root.
+pub(crate) fn validate_root_or_exit(root: &Path) {
+    if !root.exists() {
+        eprintln!("error: path does not exist: {}", root.display());
+        exit(1);
+    }
+    if !root.is_dir() {
+        eprintln!("error: not a directory: {}", root.display());
+        exit(1);
+    }
+}
+
 pub fn run(root: &Path, json: bool, db: &Path) {
+    validate_root_or_exit(root);
     let started_at = SystemTime::now();
 
     if !json {

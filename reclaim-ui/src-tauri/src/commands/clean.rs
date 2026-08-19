@@ -149,6 +149,7 @@ pub fn clean_dry_run(
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     let tier_filter = crate::tier::parse_tier(tier.as_deref())?;
+    crate::paths::validate_root(&root)?;
     Ok(build_plan(&root, tier_filter, parse_paths(paths).as_ref()))
 }
 
@@ -174,6 +175,7 @@ pub fn clean(
     let grace = grace_period_days
         .unwrap_or(reclaim_core::MIN_GRACE_PERIOD_DAYS)
         .max(reclaim_core::MIN_GRACE_PERIOD_DAYS);
+    crate::paths::validate_root(&root)?;
 
     let plan = build_plan(&root, tier_filter, parse_paths(paths).as_ref());
     let store = reclaim_store::Store::open(&db).map_err(|e| e.to_string())?;

@@ -40,6 +40,7 @@ pub fn scan(path: Option<String>, db: Option<String>) -> Result<ScanSummary, Str
     let db = db
         .map(PathBuf::from)
         .unwrap_or_else(crate::paths::default_db_path);
+    crate::paths::validate_root(&root)?;
 
     let started_at = SystemTime::now();
     let mut scanner = reclaim_scan::scan(&root);

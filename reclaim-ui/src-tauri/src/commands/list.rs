@@ -72,6 +72,7 @@ pub fn list(path: Option<String>, tier: Option<String>) -> Result<ListReport, St
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     let tier_filter = crate::tier::parse_tier(tier.as_deref())?;
+    crate::paths::validate_root(&root)?;
 
     let mut report = collect(&root);
     if let Some(tier) = tier_filter {

@@ -18,6 +18,15 @@ The one fatal failure is deleting data the user cares about.
 - Use rust-analyzer (LSP) for types/errors instead of reading files.
 - Single-crate task → work from that crate dir + its CLAUDE.md; don't load the whole workspace.
 
+## Cost control (from real /usage data — default OFF)
+Measured drains: 70% of spend was >150k context; 62% subagent-heavy; 21% superpowers.
+Fix by keeping sessions small and single-threaded:
+- Do NOT spawn subagents for milestone work. Run every prompt single-threaded.
+- Do NOT use superpowers SDD auto-review, /writing-plans, or /brainstorming for tasks that already have a spec or BUILD_PLAN entry. The docs ARE the plan.
+- Keep sessions under 150k context: one prompt = one task; I /clear between prompts and /compact if a single task must run long.
+- Quality gates are CI green + the ADR-012 safety-boundary check + my real-machine drill. No agent-generated review gate is needed on specced tasks.
+- Only spawn a subagent or invoke a superpowers skill if I explicitly ask for it by name in that message.
+
 ## Session hygiene (human runs these)
 - I `/clear` between prompts. Treat each prompt as fresh; don't assume prior chat is in context.
 - START of session: read `docs/notes/SESSION_LOG.md` FIRST for current state — NOT the full docs.

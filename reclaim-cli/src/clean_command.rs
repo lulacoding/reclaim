@@ -429,6 +429,7 @@ pub fn run(
     quarantine_dir: &Path,
     grace_period_days: u32,
 ) {
+    crate::scan_command::validate_root_or_exit(root);
     let mut plan = build_plan(root, tier_filter);
     let tool_presence = SystemToolPresence;
     let (store_items, store_plan_items, store_estimated_bytes) =
