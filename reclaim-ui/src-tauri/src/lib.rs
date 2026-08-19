@@ -21,6 +21,9 @@ pub fn run() {
             commands::restore::restore,
             commands::restore::restore_all,
             commands::status::status,
+            commands::settings::get_settings,
+            commands::settings::save_settings,
+            commands::settings::list_protected_paths,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

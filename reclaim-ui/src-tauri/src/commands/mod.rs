@@ -9,4 +9,5 @@ pub mod clean;
 pub mod list;
 pub mod restore;
 pub mod scan;
+pub mod settings;
 pub mod status;

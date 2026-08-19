@@ -19,3 +19,10 @@ pub fn default_quarantine_dir() -> PathBuf {
         .join("Reclaim")
         .join("quarantine")
 }
+
+pub fn default_config_path() -> PathBuf {
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(local_app_data)
+        .join("Reclaim")
+        .join("config.toml")
+}
