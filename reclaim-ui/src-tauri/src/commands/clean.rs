@@ -161,6 +161,7 @@ pub fn clean(
     db: Option<String>,
     quarantine_dir: Option<String>,
     grace_period_days: Option<u32>,
+    config: Option<String>,
 ) -> Result<CleanExecution, String> {
     let root = path
         .map(PathBuf::from)
@@ -172,9 +173,18 @@ pub fn clean(
     let staging_root = quarantine_dir
         .map(PathBuf::from)
         .unwrap_or_else(crate::paths::default_quarantine_dir);
-    let grace = grace_period_days
-        .unwrap_or(reclaim_core::MIN_GRACE_PERIOD_DAYS)
-        .max(reclaim_core::MIN_GRACE_PERIOD_DAYS);
+    let grace = match grace_period_days {
+        Some(days) => days.max(reclaim_core::MIN_GRACE_PERIOD_DAYS),
+        None => {
+            let config_path = config
+                .map(PathBuf::from)
+                .unwrap_or_else(crate::paths::default_config_path);
+            reclaim_core::Config::load(&config_path)
+                .unwrap_or_default()
+                .validated()
+                .grace_period_days
+        }
+    };
     crate::paths::validate_root(&root)?;
 
     let plan = build_plan(&root, tier_filter, parse_paths(paths).as_ref());
@@ -244,6 +254,7 @@ mod tests {
         fixture: tempfile::TempDir,
         db: PathBuf,
         quarantine_dir: PathBuf,
+        config: PathBuf,
         _isolation: tempfile::TempDir,
     }
 
@@ -273,6 +284,7 @@ mod tests {
         TestEnv {
             db: isolation.path().join("reclaim.db"),
             quarantine_dir: isolation.path().join("quarantine"),
+            config: isolation.path().join("config.toml"),
             fixture,
             _isolation: isolation,
         }
@@ -330,6 +342,7 @@ mod tests {
             Some(env.db.to_string_lossy().into_owned()),
             Some(env.quarantine_dir.to_string_lossy().into_owned()),
             None,
+            Some(env.config.to_string_lossy().into_owned()),
         )
         .expect("clean should succeed");
 
@@ -337,5 +350,65 @@ mod tests {
         assert_eq!(result.quarantined[0].path, pkg_a);
         assert!(!pkg_a.exists(), "the selected item should have moved");
         assert!(pkg_b.exists(), "the unselected item must be left untouched");
+    }
+
+    #[test]
+    fn clean_uses_the_grace_period_from_a_persisted_config_when_none_is_passed_explicitly() {
+        let env = setup();
+        let pkg_a = env.fixture.path().join("pkg-a").join("node_modules");
+        reclaim_core::Config {
+            grace_period_days: 45,
+            ..reclaim_core::Config::default()
+        }
+        .save(&env.config)
+        .unwrap();
+        let before = std::time::SystemTime::now();
+
+        clean(
+            Some(env.fixture.path().to_string_lossy().into_owned()),
+            None,
+            Some(vec![pkg_a.to_string_lossy().into_owned()]),
+            Some(env.db.to_string_lossy().into_owned()),
+            Some(env.quarantine_dir.to_string_lossy().into_owned()),
+            None,
+            Some(env.config.to_string_lossy().into_owned()),
+        )
+        .expect("clean should succeed");
+
+        let store = reclaim_store::Store::open(&env.db).unwrap();
+        let items = store.all_quarantined_items().unwrap();
+        assert_eq!(items.len(), 1);
+        let expected_earliest = before + std::time::Duration::from_secs(44 * 86_400);
+        assert!(
+            items[0].restore_deadline > expected_earliest,
+            "restore_deadline should be ~45 days out, reflecting the persisted config, \
+             not the 30-day floor"
+        );
+    }
+
+    #[test]
+    fn clean_falls_back_to_the_grace_period_floor_when_no_config_file_exists() {
+        let env = setup();
+        let pkg_a = env.fixture.path().join("pkg-a").join("node_modules");
+        let before = std::time::SystemTime::now();
+
+        clean(
+            Some(env.fixture.path().to_string_lossy().into_owned()),
+            None,
+            Some(vec![pkg_a.to_string_lossy().into_owned()]),
+            Some(env.db.to_string_lossy().into_owned()),
+            Some(env.quarantine_dir.to_string_lossy().into_owned()),
+            None,
+            Some(env.config.to_string_lossy().into_owned()), // path doesn't exist yet
+        )
+        .expect("clean should succeed");
+
+        let store = reclaim_store::Store::open(&env.db).unwrap();
+        let items = store.all_quarantined_items().unwrap();
+        let expected_earliest = before + std::time::Duration::from_secs(29 * 86_400);
+        assert!(
+            items[0].restore_deadline > expected_earliest,
+            "must fall back to the 30-day floor when no config file exists"
+        );
     }
 }
