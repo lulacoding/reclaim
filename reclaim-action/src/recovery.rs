@@ -8,7 +8,7 @@
 //! corrects the manifest to match — so a crash mid-batch, with only
 //! some of an operation's items moved, still loses no item's status.
 
-use reclaim_store::{OperationId, Store};
+use reclaim_store::{AuditLogEntry, OperationId, Store};
 
 use crate::error::{Error, Result};
 
@@ -58,6 +58,77 @@ pub fn recover(store: &Store, grace_period_days: u32) -> Result<Vec<RecoveredIte
             });
         }
         store.mark_operation_reconciled(op.op_id)?;
+    }
+    Ok(recovered)
+}
+
+/// Outcome of reconciling one crash-orphaned purge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PurgeOutcome {
+    /// The delete completed before the crash; only the status update
+    /// after it didn't.
+    Purged,
+    /// The delete never ran, or didn't finish; the item is unchanged,
+    /// still in quarantine.
+    Reverted,
+}
+
+/// One item crash recovery reconciled against the filesystem, for the
+/// delete primitive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveredPurge {
+    pub item_id: i64,
+    pub outcome: PurgeOutcome,
+}
+
+/// Reconciles every item left `'purging'` against the filesystem --
+/// mirrors `recover` for the delete primitive instead of the move
+/// primitive: a same-volume move can only be found at one of two
+/// locations (source or quarantine), while a delete can only be found
+/// gone-or-not-gone, so this is a separate pass with a different disk
+/// check, not merged into `recover` itself. Idempotent: an item is only
+/// ever read while still `'purging'`, so a second call after a first
+/// success has nothing left to reconcile.
+pub fn recover_purges(store: &Store) -> Result<Vec<RecoveredPurge>> {
+    let mut recovered = Vec::new();
+    for item in store.items_purging()? {
+        let outcome = if item.quarantine_path.try_exists()? {
+            store.revert_incomplete_purge(item.item_id)?;
+            store.record_audit(AuditLogEntry {
+                ts: std::time::SystemTime::now(),
+                action: "purge",
+                source_path: &item.source_path,
+                quarantine_path: Some(&item.quarantine_path),
+                size_bytes: item.size_bytes,
+                tier: item.tier,
+                decided_by: "user",
+                reclaim_method: item.reclaim_method.clone(),
+                process_holding: None,
+                result: "reverted",
+                note: Some("purge interrupted before delete; item remains quarantined"),
+            })?;
+            PurgeOutcome::Reverted
+        } else {
+            store.complete_purge_item(item.item_id)?;
+            store.record_audit(AuditLogEntry {
+                ts: std::time::SystemTime::now(),
+                action: "purge",
+                source_path: &item.source_path,
+                quarantine_path: Some(&item.quarantine_path),
+                size_bytes: item.size_bytes,
+                tier: item.tier,
+                decided_by: "user",
+                reclaim_method: item.reclaim_method,
+                process_holding: None,
+                result: "ok",
+                note: Some("reconciled after crash"),
+            })?;
+            PurgeOutcome::Purged
+        };
+        recovered.push(RecoveredPurge {
+            item_id: item.item_id,
+            outcome,
+        });
     }
     Ok(recovered)
 }

@@ -12,7 +12,10 @@
 use std::fs;
 use std::path::Path;
 
-use reclaim_action::{recover, RecoveredLocation};
+use reclaim_action::{
+    quarantine, recover, recover_purges, PurgeOutcome, QuarantineRequest, RecoveredLocation,
+};
+use reclaim_core::ProtectedPaths;
 use reclaim_core::{ReclaimMethod, Tier};
 use reclaim_store::{PlannedItem, Store};
 
@@ -149,5 +152,94 @@ fn recovers_every_item_in_a_batch_crashed_mid_way_through() {
         store.recover().unwrap(),
         Vec::new(),
         "reconciled operation must no longer be pending"
+    );
+}
+
+/// Quarantines a single item via the real `quarantine()` call (not the
+/// journal-only `simulate_move` helper above -- these tests need a real
+/// on-disk quarantine copy to delete) and returns `(store, item_id, quarantine_path)`.
+fn quarantine_one_item(base: &Path) -> (Store, i64, std::path::PathBuf) {
+    let source_root = base.join("source");
+    let staging_root = base.join("staging");
+    fs::create_dir_all(&source_root).unwrap();
+    let item_dir = source_root.join("node_modules");
+    fs::create_dir_all(&item_dir).unwrap();
+    fs::write(item_dir.join("marker.txt"), b"junk").unwrap();
+
+    let store = Store::open_in_memory().unwrap();
+    let protected = ProtectedPaths::from_roots::<[&str; 0], &str>([]);
+    let quarantine_path = quarantine(
+        &store,
+        &protected,
+        &staging_root,
+        30,
+        QuarantineRequest {
+            source_path: item_dir,
+            size_bytes: 4,
+            size_on_disk: 4,
+            tier: Tier::Safe,
+            reclaim_method: ReclaimMethod::Move,
+        },
+    )
+    .unwrap();
+    let item_id = store.all_quarantined_items().unwrap()[0].item_id;
+    (store, item_id, quarantine_path)
+}
+
+#[test]
+fn recover_purges_reverts_an_item_when_the_crash_precedes_the_delete() {
+    let base = tempfile::tempdir().unwrap();
+    let (store, item_id, quarantine_path) = quarantine_one_item(base.path());
+    // Simulate the crash: journal intent, but never actually delete --
+    // calling begin_purge directly rather than through purge().
+    store.begin_purge(item_id).unwrap();
+
+    let recovered = recover_purges(&store).unwrap();
+
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].item_id, item_id);
+    assert_eq!(recovered[0].outcome, PurgeOutcome::Reverted);
+    assert!(quarantine_path.exists(), "nothing was actually deleted");
+    assert!(
+        quarantine_path.join("marker.txt").exists(),
+        "content must be byte-identical, untouched"
+    );
+    assert_eq!(
+        store.all_quarantined_items().unwrap().len(),
+        1,
+        "item must be quarantined again, restorable"
+    );
+}
+
+#[test]
+fn recover_purges_finalizes_an_item_when_the_crash_follows_the_delete() {
+    let base = tempfile::tempdir().unwrap();
+    let (store, item_id, quarantine_path) = quarantine_one_item(base.path());
+    // Simulate the crash: journal intent, delete for real, but never call
+    // complete_purge_item.
+    store.begin_purge(item_id).unwrap();
+    fs::remove_dir_all(&quarantine_path).unwrap();
+
+    let recovered = recover_purges(&store).unwrap();
+
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].item_id, item_id);
+    assert_eq!(recovered[0].outcome, PurgeOutcome::Purged);
+    assert_eq!(store.all_quarantined_items().unwrap(), Vec::new());
+}
+
+#[test]
+fn recover_purges_is_idempotent_once_reconciled() {
+    let base = tempfile::tempdir().unwrap();
+    let (store, item_id, _quarantine_path) = quarantine_one_item(base.path());
+    store.begin_purge(item_id).unwrap();
+
+    recover_purges(&store).unwrap();
+    let second = recover_purges(&store).unwrap();
+
+    assert_eq!(
+        second,
+        Vec::new(),
+        "nothing left to reconcile the second time"
     );
 }

@@ -23,6 +23,8 @@ pub use error::{Error, Result};
 pub use free_space::{free_bytes, FreeSpaceSource, SystemFreeSpace};
 pub use purge::purge;
 pub use quarantine::{quarantine, QuarantineRequest};
-pub use recovery::{recover, RecoveredItem, RecoveredLocation};
+pub use recovery::{
+    recover, recover_purges, PurgeOutcome, RecoveredItem, RecoveredLocation, RecoveredPurge,
+};
 pub use restore::{restore, restore_all, RestoredItem};
 pub use tool_detection::{command_on_path, detect_tool, resolve_store_dir, ToolPresence};
