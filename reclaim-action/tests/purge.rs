@@ -114,3 +114,49 @@ fn purge_refuses_a_row_pointing_outside_the_given_staging_root() {
         "nothing must be deleted when the staging-root check fails"
     );
 }
+
+#[test]
+fn purge_refuses_a_sibling_directory_that_only_shares_a_string_prefix() {
+    let base = tempfile::tempdir().unwrap();
+    let staging_root = base.path().join("staging");
+    fs::create_dir_all(&staging_root).unwrap();
+
+    // A sibling directory whose name has `staging` as a string prefix
+    // (`staging-sibling`) but is NOT a path-component descendant of
+    // `staging_root`. A raw `str::starts_with` containment check would
+    // wrongly treat this as contained; a component-wise check must not.
+    let sibling_root = base.path().join("staging-sibling");
+    let item_dir = sibling_root.join("op-1").join("node_modules");
+    fs::create_dir_all(&item_dir).unwrap();
+    fs::write(item_dir.join("marker.txt"), b"junk").unwrap();
+
+    let store = Store::open_in_memory().unwrap();
+    let protected = ProtectedPaths::from_roots::<[&str; 0], &str>([]);
+    // Hand-construct a quarantine_items row pointing at the sibling
+    // directory, simulating a corrupted/hand-edited row -- `quarantine()`
+    // itself never produces a path like this.
+    let op_id = store
+        .begin_operation(
+            "quarantine",
+            std::slice::from_ref(&reclaim_store::PlannedItem {
+                source_path: base.path().join("source-does-not-matter"),
+                quarantine_path: item_dir.clone(),
+                size_bytes: 4,
+                size_on_disk: 4,
+                tier: Tier::Safe,
+                reclaim_method: ReclaimMethod::Move,
+            }),
+        )
+        .unwrap();
+    store.complete_operation(op_id, 30).unwrap();
+    let item_id = store.all_quarantined_items().unwrap()[0].item_id;
+
+    let err = purge(&store, &protected, &staging_root, item_id)
+        .expect_err("a sibling directory sharing only a string prefix must be refused");
+
+    assert!(matches!(err, Error::EscapedStagingRoot { .. }));
+    assert!(
+        item_dir.exists(),
+        "nothing must be deleted when the staging-root check fails"
+    );
+}

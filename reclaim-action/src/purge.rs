@@ -90,16 +90,41 @@ pub fn purge(
     Ok(())
 }
 
-/// Lowercase string-prefix containment check, matching `quarantine.rs`'s
-/// own `same_volume` helper's approach (case-insensitive Windows paths) --
-/// deliberately not `std::fs::canonicalize` + `Path::starts_with`, since
-/// canonicalizing only one side risks exactly the representation-mismatch
-/// bug this codebase has already been bitten by twice (OneDrive KFM, 8.3
-/// short names): `quarantine_path` was stored in whatever literal form
+/// Case-insensitive, component-wise containment check, matching
+/// `quarantine.rs`'s own `same_volume` helper's approach to
+/// case-insensitive Windows paths -- deliberately not
+/// `std::fs::canonicalize` + `Path::starts_with`, since canonicalizing
+/// only one side risks exactly the representation-mismatch bug this
+/// codebase has already been bitten by twice (OneDrive KFM, 8.3 short
+/// names): `quarantine_path` was stored in whatever literal form
 /// `staging_root` had at quarantine time, not necessarily its canonical
 /// form.
+///
+/// Deliberately component-wise rather than a raw string prefix: a naive
+/// `starts_with` on the lowercased strings would let a sibling directory
+/// through (`staging_root` = `C:\dq\stage`, `quarantine_path` under
+/// `C:\dq\stage-old\...` shares the string prefix but isn't actually
+/// contained). Also rejects any `..` component in `quarantine_path`
+/// outright, since a `ParentDir` component could otherwise walk back out
+/// of the root even after a component-wise prefix match.
 fn under_staging_root(quarantine_path: &Path, staging_root: &Path) -> bool {
-    let path = quarantine_path.to_string_lossy().to_lowercase();
-    let root = staging_root.to_string_lossy().to_lowercase();
-    path.starts_with(&root)
+    if quarantine_path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+
+    let path_components: Vec<String> = quarantine_path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect();
+    let root_components: Vec<String> = staging_root
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect();
+
+    !root_components.is_empty()
+        && path_components.len() >= root_components.len()
+        && path_components[..root_components.len()] == root_components[..]
 }
