@@ -3,6 +3,7 @@
 mod clean_command;
 mod list_command;
 mod managed_store;
+mod purge_command;
 mod restore_command;
 mod scan_command;
 mod status_command;
@@ -110,6 +111,29 @@ enum Command {
         #[arg(long)]
         db: Option<PathBuf>,
     },
+    /// Permanently deletes a single quarantined item (ADR-014). The only
+    /// irreversible `dq` command. Requires `--yes`; without it, prints a
+    /// preview and mutates nothing.
+    Purge {
+        /// The quarantined item's id (see `dq status`).
+        item_id: i64,
+        /// Actually purge. Without this, prints a preview and exits.
+        #[arg(long)]
+        yes: bool,
+        /// Print the result as JSON instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+        /// State database path. Defaults to `%LOCALAPPDATA%\Reclaim\reclaim.db`.
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Quarantine staging root. Defaults to `%LOCALAPPDATA%\Reclaim\quarantine`.
+        #[arg(long = "quarantine-dir")]
+        quarantine_dir: Option<PathBuf>,
+        /// Persisted-config path (grace period / early-purge toggle).
+        /// Defaults to `%LOCALAPPDATA%\Reclaim\config.toml`.
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -195,6 +219,20 @@ fn main() {
         Command::Status { json, db } => {
             let db = db.unwrap_or_else(scan_command::default_db_path);
             status_command::run(&db, json);
+        }
+        Command::Purge {
+            item_id,
+            yes,
+            json,
+            db,
+            quarantine_dir,
+            config,
+        } => {
+            let db = db.unwrap_or_else(scan_command::default_db_path);
+            let quarantine_dir =
+                quarantine_dir.unwrap_or_else(clean_command::default_quarantine_dir);
+            let config_path = config.unwrap_or_else(purge_command::default_config_path);
+            purge_command::run(item_id, yes, json, &db, &quarantine_dir, &config_path);
         }
     }
 }
