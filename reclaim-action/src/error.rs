@@ -42,6 +42,18 @@ pub enum Error {
         source_path: PathBuf,
         quarantine_path: PathBuf,
     },
+
+    #[error("no quarantined item found with id {0}")]
+    ItemNotFound(i64),
+
+    #[error(
+        "quarantine path {} is not under the staging root {}; refusing to purge",
+        .quarantine_path.display(), .staging_root.display()
+    )]
+    EscapedStagingRoot {
+        quarantine_path: PathBuf,
+        staging_root: PathBuf,
+    },
 }
 
 /// Convenience alias for `Result<T, Error>`.

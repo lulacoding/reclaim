@@ -7,6 +7,7 @@ mod command_runner;
 mod docker_reclaim;
 mod error;
 mod free_space;
+mod purge;
 mod quarantine;
 mod recovery;
 mod restore;
@@ -20,6 +21,7 @@ pub use command_runner::{
 pub use docker_reclaim::{docker_reclaim_sequence, run_docker_reclaim};
 pub use error::{Error, Result};
 pub use free_space::{free_bytes, FreeSpaceSource, SystemFreeSpace};
+pub use purge::purge;
 pub use quarantine::{quarantine, QuarantineRequest};
 pub use recovery::{recover, RecoveredItem, RecoveredLocation};
 pub use restore::{restore, restore_all, RestoredItem};
