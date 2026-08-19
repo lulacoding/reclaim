@@ -24,6 +24,7 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::settings::list_protected_paths,
+            commands::purge::purge_item,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
