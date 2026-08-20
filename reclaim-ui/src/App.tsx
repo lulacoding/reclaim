@@ -3,19 +3,16 @@ import TitleBar from "./components/TitleBar";
 import Sidebar, { type NavView } from "./components/Sidebar";
 import ScanView from "./components/ScanView";
 import ReviewView from "./components/ReviewView";
+import SettingsView from "./components/SettingsView";
 import type { Candidate } from "./api/types";
 import "./App.css";
 
-type PlaceholderView = Exclude<NavView, "scan" | "review">;
+type PlaceholderView = Exclude<NavView, "scan" | "review" | "settings">;
 
 const VIEW_COPY: Record<PlaceholderView, { title: string; body: string }> = {
   quarantine: {
     title: "Quarantine",
     body: "Quarantined items, their purge deadlines, and restore controls land here.",
-  },
-  settings: {
-    title: "Settings",
-    body: "Protected paths, grace period, and other preferences land here.",
   },
 };
 
@@ -67,7 +64,8 @@ function App() {
               onDone={finishReview}
             />
           )}
-          {view !== "scan" && view !== "review" && (
+          {view === "settings" && <SettingsView />}
+          {view !== "scan" && view !== "review" && view !== "settings" && (
             <div className="app-content-placeholder">
               <h2>{VIEW_COPY[view].title}</h2>
               <p>{VIEW_COPY[view].body}</p>

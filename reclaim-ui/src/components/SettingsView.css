@@ -1,0 +1,83 @@
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 640px;
+}
+
+.settings-loading {
+  font-size: 13.5px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.settings-error {
+  font-size: 12.5px;
+  color: var(--tier-probsafe-text);
+}
+
+.settings-section h3 {
+  font-size: 14px;
+  margin-bottom: var(--space-2);
+}
+
+.settings-section-hint {
+  margin: 0 0 var(--space-3);
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.settings-protected-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.settings-protected-row {
+  padding: 7px var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 12.5px;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+
+.settings-protected-row:last-child {
+  border-bottom: none;
+}
+
+.settings-grace-input {
+  width: 100px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-warning {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--tier-probsafe) 16%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--tier-probsafe) 40%, transparent);
+  color: var(--tier-probsafe-text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
