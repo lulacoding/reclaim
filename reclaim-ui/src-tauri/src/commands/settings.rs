@@ -37,7 +37,13 @@ pub fn get_settings(config: Option<String>) -> SettingsView {
         .into()
 }
 
-#[tauri::command]
+// rename_all = "snake_case": save_settings has two *required* multi-word
+// params, and Tauri's default IPC binding otherwise expects camelCase JS
+// keys (gracePeriodDays/earlyPurgeEnabled) -- confirmed live, the frontend's
+// snake_case invoke() payload (matching this crate's documented convention,
+// see commands.ts's module doc) was rejected outright with "missing
+// required key gracePeriodDays" before this was added.
+#[tauri::command(rename_all = "snake_case")]
 pub fn save_settings(
     grace_period_days: u32,
     early_purge_enabled: bool,
