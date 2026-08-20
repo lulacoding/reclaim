@@ -76,3 +76,8 @@ export interface CleanExecution {
   reclaimed_bytes: number;
   failures: CleanFailure[];
 }
+
+export interface SettingsView {
+  grace_period_days: number;
+  early_purge_enabled: boolean;
+}
